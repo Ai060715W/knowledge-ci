@@ -3,7 +3,7 @@
 ## 1. 安装 / Install
 
 ```powershell
-git clone https://github.com/<your-account>/knowledge-ci.git
+git clone https://github.com/Ai060715W/knowledge-ci.git
 cd knowledge-ci
 python -m venv venv
 venv\Scripts\activate          # macOS/Linux: source venv/bin/activate

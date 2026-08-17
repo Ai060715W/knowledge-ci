@@ -47,7 +47,7 @@ inject_context.py ──► AI 编码前注入知识摘要、风险等级、历�
 
 ```powershell
 # 1. 克隆仓库 / Clone the repository
-git clone https://github.com/<your-account>/knowledge-ci.git
+git clone https://github.com/Ai060715W/knowledge-ci.git
 cd knowledge-ci
 
 # 2. 安装依赖（建议使用虚拟环境）/ Install dependencies (a venv is recommended)
