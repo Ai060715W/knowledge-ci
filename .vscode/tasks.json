@@ -1,0 +1,25 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Knowledge CI: Inject Context",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "<PATH-TO-KNOWLEDGE-CI>/scripts/inject_context.py",
+        "--file",
+        "${file}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "dedicated",
+        "showReuseMessage": false
+      }
+    }
+  ]
+}

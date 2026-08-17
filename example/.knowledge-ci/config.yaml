@@ -1,0 +1,11 @@
+# Knowledge CI configuration for the example project.
+# 所有相对路径以本文件所在目录（.knowledge-ci/）为基准。
+# All relative paths are anchored to this file's directory (.knowledge-ci/).
+project_path: ".."
+
+registry_path: "data/registry.json"
+reports_path: "data/reports"
+patches_path: "data/patches"
+feedback_path: "data/feedback.jsonl"
+
+model: "deepseek-chat"

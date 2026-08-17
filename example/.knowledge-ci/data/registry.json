@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "last_updated": "2026-08-17",
+  "units": [
+    {
+      "id": "payment_retry",
+      "name": "支付重试 / Payment retry",
+      "file_pattern": "src/payment/retry.py",
+      "risk_level": "HIGH",
+      "knowledge_delta": {
+        "ops": [
+          {
+            "insert": "支付重试上限为 3 次：第三方网关的扣款幂等性仅在 3 次内保证，超过 3 次会产生重复扣款风险。修改默认重试次数前必须与支付组确认。\nPayment retry limit is 3: gateway idempotency is only guaranteed within 3 attempts; more attempts risk duplicate charges. Confirm with the payment team before changing the default."
+          }
+        ]
+      },
+      "related_docs": ["docs/payment-spec.md"],
+      "last_verified": "2026-08-17",
+      "code_hash": "",
+      "version": 1
+    },
+    {
+      "id": "payment_refund",
+      "name": "支付退款 / Payment refund",
+      "file_pattern": "src/payment/refund.py",
+      "risk_level": "HIGH",
+      "knowledge_delta": {
+        "ops": [
+          {
+            "insert": "退款必须走幂等通道，同一退款单号重复提交不会二次打款。退款金额不得超过原订单实付金额。\nRefunds must use the idempotent channel: resubmitting the same refund id never pays twice, and the refund amount must not exceed the original paid amount."
+          }
+        ]
+      },
+      "related_docs": ["docs/payment-spec.md"],
+      "last_verified": "2026-08-17",
+      "code_hash": "",
+      "version": 1
+    }
+  ]
+}

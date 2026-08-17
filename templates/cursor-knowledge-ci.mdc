@@ -1,0 +1,26 @@
+---
+description: Knowledge CI 上下文注入规则 / Knowledge CI context injection
+globs:
+  - src/**/*.py
+  - src/**/*.js
+  - src/**/*.ts
+alwaysApply: false
+---
+
+# Knowledge CI 上下文注入规则 / Knowledge CI context injection
+
+修改关键模块文件前，请先运行注入命令，将输出作为上下文参考。
+Before editing a key module file, run the injection command and use its output as context:
+
+```powershell
+python <PATH-TO-KNOWLEDGE-CI>/scripts/inject_context.py --file <当前文件 / current file>
+```
+
+输出包含：知识摘要、风险等级、历史决策、影响警告、最近验证时间。
+The output includes: knowledge summary, risk level, historical decisions,
+impact warnings, and the last verified date.
+
+> 安装方式：把本文件复制到目标项目的 `.cursor/rules/` 目录，按项目实际路径
+> 修改 globs 与命令路径后重启 Cursor。
+> Install: copy this file into `.cursor/rules/` of your project, adjust the
+> globs and command path, then restart Cursor.

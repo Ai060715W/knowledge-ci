@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+
+# Secrets
+.env
+
+# Per-user Knowledge CI artifacts (keep these out of the template repo)
+data/patches/*.json
+data/reports/*.json
+data/feedback.jsonl
+example/.knowledge-ci/data/patches/*.json
+example/.knowledge-ci/data/reports/*.json
+example/.knowledge-ci/data/feedback.jsonl

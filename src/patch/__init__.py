@@ -1,0 +1,2 @@
+"""Knowledge patch utilities."""
+
