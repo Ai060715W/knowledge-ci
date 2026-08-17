@@ -8,6 +8,7 @@ cd knowledge-ci
 python -m venv venv
 venv\Scripts\activate          # macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
+pip install -e .               # 可选 / optional: 提供统一 `kc` CLI
 ```
 
 依赖 / Dependencies：`openai`（LLM 补丁生成）、`GitPython`（提交分析）、`pyyaml`、`jsonschema`。
@@ -16,6 +17,7 @@ pip install -r requirements.txt
 
 ```powershell
 python scripts\init_project.py --project C:\path\to\your-project
+# 或 / or: kc init --project C:\path\to\your-project
 ```
 
 生成 / Creates：
@@ -25,13 +27,19 @@ your-project/
 └── .knowledge-ci/
     ├── config.yaml               # project_path 指向项目根
     ├── data/
-    │   ├── registry.json         # 空注册表（从这里开始录入知识单元）
+    │   ├── registry.json         # 空注册表（schema v2，从这里开始录入知识单元）
     │   ├── registry.example.json # 完整字段示例，照着复制
     │   ├── patches/              # 补丁输出
-    │   └── reports/              # 影响报告
+    │   ├── reports/              # 影响报告
+    │   ├── evidence/             # 证据文档（v2）
+    │   └── metrics/              # 指标输出（v2）
 ```
 
 init 会扫描项目并列出建议优先录入的文件（体积较大、非测试目录的源码文件）。
+
+> 已用旧版（v1）初始化的项目无需重来：`python scripts\migrate_registry.py --registry <path>`
+> （或 `kc migrate --registry <path>`）即可升级，支持 `--dry-run`、自动备份与 `--rollback`。
+> v1 注册表即使不迁移也继续可用。
 
 ## 3. 录入知识 / Enter Knowledge
 
@@ -40,8 +48,15 @@ init 会扫描项目并列出建议优先录入的文件（体积较大、非测
 ```json
 {
   "id": "order_settlement",
-  "name": "订单结算 / Order settlement",
-  "file_pattern": "src/settlement/*.py",
+  "title": "订单结算 / Order settlement",
+  "summary": "结算必须在日切后执行，且金额以财务复核结果为准。",
+  "rationale": "日切前的流水可能被冲正，以复核结果为准避免重复入账。",
+  "scope": { "files": ["src/settlement/*.py"], "symbols": ["SettlementJob"] },
+  "evidence": [{ "type": "commit", "id": "9f3c21a" }],
+  "confidence": 0.7,
+  "owner": "settlement-team",
+  "reviewer": null,
+  "status": "active",
   "risk_level": "HIGH",
   "knowledge_delta": { "ops": [ { "insert": "结算必须在日切后执行，且金额以财务复核结果为准。" } ] },
   "related_docs": ["docs/settlement.md"],
@@ -52,7 +67,9 @@ init 会扫描项目并列出建议优先录入的文件（体积较大、非测
 ```
 
 规则 / Rules：`risk_level` ∈ HIGH/MEDIUM/LOW；`knowledge_delta.ops` 是 Quill Delta 数组，
-直接用 `[{"insert": "文本"}]` 即可；`file_pattern` 支持 glob，多个匹配时取最长。
+直接用 `[{"insert": "文本"}]` 即可；`scope.files` 支持 glob，多个匹配时取最长；
+`status` 走状态机（proposed → under_review → active → outdated → retired），仅 `active` 注入。
+完整字段见 [CONFIG.md](CONFIG.md)。
 
 ## 4. 配置 LLM / Configure the LLM
 
@@ -78,21 +95,25 @@ Run from your **project directory** (config auto-discovery):
 ```powershell
 # AI 改代码前，注入上下文 / inject before AI edits
 python C:\path\to\knowledge-ci\scripts\inject_context.py --file src\settlement\worker.py
+kc inject --file src\settlement\worker.py                     # 或 / or
 
 # 提交后分析影响 / analyze after a commit
 python C:\path\to\knowledge-ci\scripts\analyze_commit.py --hash 36e4a824
+kc analyze --hash 36e4a824                                    # 或 / or
 
 # 为受影响单元生成补丁 / generate a patch for an affected unit
 python C:\path\to\knowledge-ci\scripts\generate_patch.py --commit 36e4a824 --unit order_settlement
+kc generate --commit 36e4a824 --unit order_settlement         # 或 / or
 
 # 人工审核补丁后落地 / apply after review
 python C:\path\to\knowledge-ci\scripts\apply_patch.py --patch .knowledge-ci\data\patches\patch_kp_<id>.json
+kc apply --patch .knowledge-ci\data\patches\patch_kp_<id>.json  # 或 / or
 ```
 
 审核参考 / Review aids：
 
 - 补丁自带 Quill 预览（`preview_delta`），用
-  `python C:\path\to\knowledge-ci\scripts\feedback_server.py --port 8080` 后打开
+  `python C:\path\to\knowledge-ci\scripts\feedback_server.py --port 8080`（或 `kc feedback`）后打开
   `http://localhost:8080/?delta=<preview_delta>` 看前后对比。
 - 驳回后携带意见重新生成 / Regenerate with review feedback:
   `generate_patch.py ... --review-feedback "影响范围描述不实，请修正"`
@@ -109,4 +130,6 @@ python C:\path\to\knowledge-ci\scripts\apply_patch.py --patch .knowledge-ci\data
   `--mock-response-file` 离线验证。
 - **注入会花钱吗？** 不会。注入只读本地 JSON，不调用 LLM。
 - **知识目录可以提交进我的项目仓库吗？** 可以，这正是推荐做法（知识随项目版本化）；
-  `.knowledge-ci/data/{patches,reports,feedback.jsonl}` 建议加进 `.gitignore`。
+  `.knowledge-ci/data/{patches,reports,evidence,metrics,feedback.jsonl}` 建议加进 `.gitignore`。
+- **旧版（v1）注册表怎么办？** 不迁移也能用（字段自动回退）；要升级到 v2 就跑
+  `python scripts\migrate_registry.py --registry <path>`（`--dry-run` / `--rollback` 可用）。

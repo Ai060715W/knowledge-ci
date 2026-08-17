@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from src.patch.delta import apply_delta_ops, delta_to_text, text_to_delta
+from src.registry.schema import transition_status
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +41,9 @@ def apply_patch_to_registry(
         unit["version"] = patch.get("new_version", int(unit.get("version", 0)) + 1)
         unit["last_verified"] = date.today().isoformat()
         unit["code_hash"] = str(patch.get("commit", ""))[:8]
+        # An approved, landed patch makes the knowledge live again (schema v2
+        # state machine); illegal transitions (e.g. from retired) raise.
+        transition_status(unit, "active")
         registry["last_updated"] = patch.get("generated_at", registry.get("last_updated"))
         Path(target).write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return registry

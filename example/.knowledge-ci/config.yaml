@@ -6,6 +6,33 @@ project_path: ".."
 registry_path: "data/registry.json"
 reports_path: "data/reports"
 patches_path: "data/patches"
+evidence_path: "data/evidence"
+metrics_path: "data/metrics"
 feedback_path: "data/feedback.jsonl"
 
 model: "deepseek-chat"
+
+# 隐藏知识发现 / hidden knowledge discovery（可选，均有默认值 / optional, defaults apply）
+discovery:
+  enabled: true
+  languages: [python]
+  top_k: 10
+  weights:
+    change_frequency: 1.0
+    dependency_centrality: 1.0
+    incident_history: 1.0
+    rollback_count: 1.0
+    contributor_entropy: 1.0
+    cross_layer_impact: 1.0
+
+# 新鲜度四层判断 / 4-layer freshness pipeline
+freshness:
+  time_filter_days: 30
+  ast_semantic_filter: true
+  dependency_impact: true
+  llm_final_judge: true
+
+# 负责人推断 / owner inference
+owners:
+  codeowners_path: ""
+  infer_from_git_blame: true

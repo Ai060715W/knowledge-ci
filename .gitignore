@@ -14,7 +14,11 @@ venv/
 # Per-user Knowledge CI artifacts (keep these out of the template repo)
 data/patches/*.json
 data/reports/*.json
+data/evidence/*.json
+data/metrics/*.json
 data/feedback.jsonl
 example/.knowledge-ci/data/patches/*.json
 example/.knowledge-ci/data/reports/*.json
+example/.knowledge-ci/data/evidence/*.json
+example/.knowledge-ci/data/metrics/*.json
 example/.knowledge-ci/data/feedback.jsonl

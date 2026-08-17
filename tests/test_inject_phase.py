@@ -109,6 +109,38 @@ class InjectContextTest(unittest.TestCase):
         self.assertEqual(context["file_path"], "src/utils/helper.py")
         self.assertIn("暂无知识记录", format_unmatched(context["file_path"]))
 
+    def test_build_context_v2_title_preferred_over_name(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            registry_path = make_registry(root)
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            registry["units"][0]["title"] = "v2 标题"
+            registry["units"][0]["name"] = "旧名字"
+            registry_path.write_text(json.dumps(registry, ensure_ascii=False), encoding="utf-8")
+            context = build_context(
+                "src/payment/retry.py",
+                root,
+                registry_path=registry_path,
+            )
+        self.assertTrue(context["matched"])
+        self.assertEqual(context["unit_name"], "v2 标题")
+
+    def test_inactive_unit_is_not_injected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            registry_path = make_registry(root, status="proposed")
+            context = build_context(
+                "src/payment/retry.py",
+                root,
+                registry_path=registry_path,
+            )
+        self.assertFalse(context["matched"])
+        self.assertEqual(context["unit_id"], "payment_retry")
+        self.assertEqual(context["inactive_status"], "proposed")
+        output = format_unmatched(context["file_path"], context["inactive_status"])
+        self.assertIn("proposed", output)
+        self.assertIn("仅 active", output)
+
     def test_history_uses_applied_patches_only(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

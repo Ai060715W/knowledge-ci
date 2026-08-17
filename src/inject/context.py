@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 
 from src.patch.delta import delta_to_text
 from src.registry.matcher import match_unit_record
+from src.registry.schema import is_injectable
 
 
 APPLIED_STATUSES = {"APPLIED", "MERGED"}
@@ -177,8 +178,18 @@ def build_context(
     if unit is None:
         return {"matched": False, "file_path": repo_path}
 
-    registry = load_json(registry_path)
+    # Schema v2 state machine: only active knowledge (or legacy units without
+    # a status) is injected; proposed/under_review/outdated/retired are not.
     unit_id = unit.get("id", "")
+    if not is_injectable(unit):
+        return {
+            "matched": False,
+            "file_path": repo_path,
+            "unit_id": unit_id,
+            "inactive_status": unit.get("status"),
+        }
+
+    registry = load_json(registry_path)
     patches = applied_patches(patches_path, unit_id) if patches_path else []
     reports = related_reports(reports_path, unit_id) if reports_path else []
 
@@ -186,7 +197,8 @@ def build_context(
         "matched": True,
         "file_path": repo_path,
         "unit_id": unit_id,
-        "unit_name": unit.get("name") or unit_id,
+        "unit_name": unit.get("title") or unit.get("name") or unit_id,
+        "status": unit.get("status") or "active",
         "risk_level": unit.get("risk_level", "LOW"),
         "knowledge_summary": delta_to_text(unit.get("knowledge_delta")),
         "history_decisions": history_decisions(unit, patches),
@@ -271,7 +283,7 @@ def format_context(
 ) -> str:
     """Format the injection context for stdout."""
     if not context.get("matched"):
-        return format_unmatched(context.get("file_path", ""))
+        return format_unmatched(context.get("file_path", ""), context.get("inactive_status"))
 
     block, tokens = knowledge_block(context, max_tokens)
     output = "【Knowledge CI 上下文】\n" + block
@@ -285,7 +297,16 @@ def format_context(
     return output
 
 
-def format_unmatched(file_path: str = "") -> str:
+def format_unmatched(file_path: str = "", inactive_status: str | None = None) -> str:
+    if inactive_status:
+        return "\n".join(
+            [
+                "【Knowledge CI 上下文】",
+                f"该文件匹配到的知识单元当前状态为 {inactive_status}，暂不注入。",
+                f"（文件：{file_path}）" if file_path else "（文件：未知）",
+                "知识状态机：proposed → under_review → active → outdated → retired；仅 active 状态注入。",
+            ]
+        )
     lines = ["【Knowledge CI 上下文】", "该文件暂无知识记录，建议补充。"]
     if file_path:
         lines.append(f"（文件：{file_path}）")

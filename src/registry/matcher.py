@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Iterable
+
+from src.registry.schema import unit_patterns, unit_symbols
 
 
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[2] / "data" / "registry.json"
@@ -35,19 +37,36 @@ def _pattern_matches(pattern: str, file_path: str) -> bool:
 def match_unit(
     file_path: str,
     registry_path: str | Path = DEFAULT_REGISTRY_PATH,
+    symbols: Iterable[str] | None = None,
 ) -> str | None:
-    """Return the matched unit id, or None when the file is unmanaged."""
+    """Return the matched unit id, or None when the file is unmanaged.
+
+    File patterns (v2 ``scope.files``, falling back to legacy ``file_pattern``)
+    take priority and the longest pattern wins. When ``symbols`` is provided
+    and no file pattern matches, units whose ``scope.symbols`` intersect the
+    given symbols are used as a symbol-level fallback.
+    """
     registry = load_registry(registry_path)
+    symbol_set = {str(symbol) for symbol in symbols} if symbols is not None else None
     matches: list[tuple[int, str]] = []
 
     for unit in registry.get("units", []):
-        pattern = unit.get("file_pattern")
         unit_id = unit.get("id")
-        if not pattern or not unit_id:
+        if not unit_id:
             continue
 
-        if _pattern_matches(pattern, file_path):
-            matches.append((len(normalize_path(pattern)), unit_id))
+        pattern_matched = False
+        for pattern in unit_patterns(unit):
+            if not pattern:
+                continue
+            if _pattern_matches(pattern, file_path):
+                matches.append((len(normalize_path(pattern)), unit_id))
+                pattern_matched = True
+                break
+
+        if not pattern_matched and symbol_set is not None and symbol_set.intersection(unit_symbols(unit)):
+            # Symbol-level matches rank below any file-pattern match.
+            matches.append((0, unit_id))
 
     if not matches:
         return None
@@ -58,12 +77,12 @@ def match_unit(
 def match_unit_record(
     file_path: str,
     registry_path: str | Path = DEFAULT_REGISTRY_PATH,
+    symbols: Iterable[str] | None = None,
 ) -> dict[str, Any] | None:
     """Return the matched unit record, or None when the file is unmanaged."""
-    unit_id = match_unit(file_path, registry_path)
+    unit_id = match_unit(file_path, registry_path, symbols=symbols)
     if unit_id is None:
         return None
 
     registry = load_registry(registry_path)
     return next((unit for unit in registry.get("units", []) if unit.get("id") == unit_id), None)
-

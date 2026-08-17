@@ -8,6 +8,41 @@ import yaml
 
 CONFIG_DIR_NAME = ".knowledge-ci"
 
+#: Defaults for the optional config sections introduced with schema v2.
+#: Users only need to override what differs from these values.
+CONFIG_DEFAULTS: dict[str, Any] = {
+    "discovery": {
+        "enabled": True,
+        "languages": ["python"],
+        "top_k": 10,
+        "weights": {
+            "change_frequency": 1.0,
+            "dependency_centrality": 1.0,
+            "incident_history": 1.0,
+            "rollback_count": 1.0,
+            "contributor_entropy": 1.0,
+            "cross_layer_impact": 1.0,
+        },
+    },
+    "freshness": {
+        "time_filter_days": 30,
+        "ast_semantic_filter": True,
+        "dependency_impact": True,
+        "llm_final_judge": True,
+    },
+    "owners": {
+        "codeowners_path": "",
+        "infer_from_git_blame": True,
+    },
+}
+
+
+def _merge_section(default: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Shallow-merge one config section: overrides win, unknown keys kept."""
+    merged = dict(default)
+    merged.update(override)
+    return merged
+
 
 def load_config(config_path: str | Path) -> dict[str, Any]:
     """Load a config.yaml file."""
@@ -55,8 +90,8 @@ def resolve_config_path(config_arg: str | None) -> Path:
 def load_project_paths(config_path: str | Path) -> dict[str, Any]:
     """Resolve every path the CLI scripts need from one config file.
 
-    Returns the resolved project root, registry/reports/patches/feedback paths,
-    and the configured model name.
+    Returns the resolved project root, registry/reports/patches/evidence/
+    metrics/feedback paths, and the configured model name.
     """
     config_file = Path(config_path).resolve()
     config = load_config(config_file)
@@ -68,6 +103,24 @@ def load_project_paths(config_path: str | Path) -> dict[str, Any]:
         "registry_path": (config_dir / config.get("registry_path", "data/registry.json")).resolve(),
         "reports_path": (config_dir / config.get("reports_path", "data/reports")).resolve(),
         "patches_path": (config_dir / config.get("patches_path", "data/patches")).resolve(),
+        "evidence_path": (config_dir / config.get("evidence_path", "data/evidence")).resolve(),
+        "metrics_path": (config_dir / config.get("metrics_path", "data/metrics")).resolve(),
         "feedback_path": (config_dir / config.get("feedback_path", "data/feedback.jsonl")).resolve(),
         "model": config.get("model", "deepseek-chat"),
     }
+
+
+def load_settings(config_path: str | Path) -> dict[str, Any]:
+    """Return the config document with optional sections filled from defaults.
+
+    Feature sections (``discovery``, ``freshness``, ``owners``) are merged with
+    ``CONFIG_DEFAULTS`` so callers can read settings without None checks.
+    """
+    config = load_config(config_path)
+    for section, defaults in CONFIG_DEFAULTS.items():
+        raw = config.get(section)
+        if raw is None:
+            config[section] = dict(defaults)
+        elif isinstance(raw, dict):
+            config[section] = _merge_section(defaults, raw)
+    return config

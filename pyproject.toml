@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "knowledge-ci"
+version = "0.1.0"
+description = "Continuous discovery, verification, injection and evolution of software knowledge."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Knowledge CI contributors" }]
+keywords = ["knowledge-management", "ci", "llm", "documentation", "code-review"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Documentation",
+]
+dependencies = [
+  "openai",
+  "pyyaml",
+  "jsonschema",
+  "GitPython",
+]
+
+[project.scripts]
+kc = "src.cli.main:main"
+
+[tool.setuptools]
+# The import package is `src` (kept for compatibility with the existing
+# scripts/ and tests/ imports); only packages under src/ are shipped.
+packages = { find = { include = ["src*"] } }

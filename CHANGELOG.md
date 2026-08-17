@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added (Plan 0: engineering & schema foundation)
+
+- `pyproject.toml` with the unified `kc` CLI (`kc init/analyze/generate/apply/inject/feedback/check-llm/migrate`); legacy `scripts/*.py` entry points remain compatible wrappers.
+- Knowledge unit schema v2 (`src/registry/schema.py` + `schema_spec.py`): `title/summary/rationale`, symbol-level `scope`, `evidence`, `confidence`, `owner/reviewer`, and the status state machine (`proposed → under_review → active → outdated → retired`); jsonschema validation; only `active` knowledge is injected.
+- `scripts/migrate_registry.py` (`kc migrate`): v1→v2 registry migration with `--dry-run`, automatic `.v1.bak` backup, `--rollback`, and idempotent re-runs.
+- `src/registry/store.py`: stable read/write interface with atomic JSON writes and `evidence`/`metrics` data directories.
+- Symbol-level unit matching (`scope.symbols`) as a fallback to file glob matching.
+- Config sections `discovery` / `freshness` / `owners` with defaults (`load_settings`), plus `evidence_path`/`metrics_path`.
+- 54 new unit tests (schema, state machine, migration, store, CLI) — 87 total, all passing.
+
 ## [0.1.0] - 2026-08-17
 
 Initial open-source release, generalized from the 4-week Knowledge CI POC.

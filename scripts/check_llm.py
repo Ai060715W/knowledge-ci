@@ -1,24 +1,20 @@
 from __future__ import annotations
 
-import os
+"""Compatibility wrapper around src.cli.check_llm.
 
-from openai import OpenAI
+Behavior is identical to the original script; the implementation now lives in
+``src/cli/check_llm.py`` so it can also run through the unified ``kc`` CLI.
+"""
+
+import sys
+from pathlib import Path
 
 
-def main() -> int:
-    if not os.environ.get("OPENAI_API_KEY"):
-        print("OPENAI_API_KEY is not set.")
-        return 1
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-    client = OpenAI()
-    response = client.chat.completions.create(
-        model=os.environ.get("KNOWLEDGE_CI_MODEL", "deepseek-chat"),
-        messages=[{"role": "user", "content": "Hello from Knowledge CI POC. Reply with OK."}],
-    )
-    print(response.choices[0].message.content)
-    return 0
-
+from src.cli.check_llm import main  # noqa: E402
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

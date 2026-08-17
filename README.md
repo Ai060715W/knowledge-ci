@@ -29,10 +29,13 @@ inject_context.py ──► AI 编码前注入知识摘要、风险等级、历�
 
 ## 特性 / Features
 
-- **零安装 / Zero install**：纯 Python 3.10+，克隆即用，`init_project.py` 一行接入任何项目。
-  Clone and run — `init_project.py` onboards any project in one command.
-- **知识即代码 / Knowledge as code**：registry.json + Quill Delta 补丁，知识演化可预览、可审核、可回滚。
-  Knowledge evolves through reviewable, revertible Delta patches.
+- **零安装 / Zero install**：纯 Python 3.10+，克隆即用，`init_project.py` 一行接入任何项目；
+  也可 `pip install -e .` 获得统一 `kc` CLI（`kc init`、`kc inject`……）。
+  Clone and run — `init_project.py` onboards any project in one command, or
+  `pip install -e .` for the unified `kc` CLI.
+- **知识即代码 / Knowledge as code**：registry.json（schema v2）+ Quill Delta 补丁，知识单元带证据链、
+  置信度、负责人与状态机（proposed → under_review → active → outdated → retired），
+  演化可预览、可审核、可回滚。Knowledge evolves through reviewable, revertible Delta patches.
 - **LLM 只生成候选 / LLM proposes, humans dispose**：补丁必须通过 Delta 校验、模糊词检查和人工审核才能落地；
   校验失败自动回喂错误让模型自纠错（≤3 次），审核驳回可用 `--review-feedback` 修正重生成。
   Patches must pass Delta validation, fuzzy-word checks, and human review. Failed validation
@@ -40,8 +43,8 @@ inject_context.py ──► AI 编码前注入知识摘要、风险等级、历�
   `--review-feedback`.
 - **注入零成本 / Zero-cost injection**：注入只读本地 JSON 渲染文本（默认 500 tokens 内），不调用 LLM。
   Injection reads local JSON only — no LLM call, ~0.2s, under a 500-token budget.
-- **轻量 / Lightweight**：影响分析基于文件 glob 匹配；预览器是静态 HTML；审核复用 GitHub PR。
-  Impact analysis uses file glob matching; the previewer is static HTML; review reuses GitHub PRs.
+- **轻量 / Lightweight**：影响分析基于文件 glob + 符号匹配；预览器是静态 HTML；审核复用 GitHub PR。
+  Impact analysis uses file glob + symbol matching; the previewer is static HTML; review reuses GitHub PRs.
 
 ## 快速开始 / Quick Start
 
@@ -54,13 +57,17 @@ cd knowledge-ci
 python -m venv venv
 venv\Scripts\activate        # macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
+# 可选 / Optional: 安装统一 CLI，之后可用 `kc init` 等命令替代 `python scripts\...`
+pip install -e .
 
 # 3. 接入你的项目 / Onboard your project
 python scripts\init_project.py --project C:\path\to\your-project
 
 # 4. 把核心/高风险模块录入 .knowledge-ci/data/registry.json
-#    (schema 示例见 registry.example.json / see the schema sample)
+#    (schema v2 示例见下方"知识单元"一节 / see the knowledge-unit example below)
 #    Add your core/high-risk modules to the registry.
+#    已有 v1 注册表？升级：python scripts\migrate_registry.py --registry <path>（或 kc migrate）
+#    Upgrading an existing v1 registry: python scripts\migrate_registry.py --registry <path> (or kc migrate)
 
 # 5. 配置 LLM（生成补丁用）/ Configure the LLM (for patch generation)
 $env:OPENAI_API_KEY = "sk-..."                       # OpenAI
@@ -84,12 +91,13 @@ Run from your project directory (config is auto-discovered).
 
 | 命令 / Command | 作用 / Purpose |
 |:---|:---|
-| `python <kc>/scripts/init_project.py --project <path>` | 初始化项目知识目录 / initialize `.knowledge-ci/` |
-| `python <kc>/scripts/analyze_commit.py --hash <commit>` | 分析提交影响，产出报告 / impact report |
-| `python <kc>/scripts/generate_patch.py --commit <c> --unit <id>` | LLM 生成知识补丁 / generate a patch |
-| `python <kc>/scripts/apply_patch.py --patch <file>` | 审核通过后落地补丁 / apply an approved patch |
-| `python <kc>/scripts/inject_context.py --file <path>` | AI 编码前注入上下文 / inject context |
-| `python <kc>/scripts/feedback_server.py --port 8080` | 补丁预览 + 反馈收集 / preview + feedback |
+| `python <kc>/scripts/init_project.py --project <path>`（或 `kc init`）/ or `kc init` | 初始化项目知识目录 / initialize `.knowledge-ci/` |
+| `python <kc>/scripts/migrate_registry.py --registry <path>`（或 `kc migrate`）/ or `kc migrate` | v1 注册表升级到 schema v2（dry-run/备份/回滚）/ migrate a registry to schema v2 |
+| `python <kc>/scripts/analyze_commit.py --hash <commit>`（或 `kc analyze`）/ or `kc analyze` | 分析提交影响，产出报告 / impact report |
+| `python <kc>/scripts/generate_patch.py --commit <c> --unit <id>`（或 `kc generate`）/ or `kc generate` | LLM 生成知识补丁 / generate a patch |
+| `python <kc>/scripts/apply_patch.py --patch <file>`（或 `kc apply`）/ or `kc apply` | 审核通过后落地补丁 / apply an approved patch |
+| `python <kc>/scripts/inject_context.py --file <path>`（或 `kc inject`）/ or `kc inject` | AI 编码前注入上下文 / inject context |
+| `python <kc>/scripts/feedback_server.py --port 8080`（或 `kc feedback`）/ or `kc feedback` | 补丁预览 + 反馈收集 / preview + feedback |
 
 常用参数 / Useful flags：`inject_context.py --json --max-tokens 300 --verbose`；
 `generate_patch.py --review-feedback "..."`（按审核意见修正 / regenerate from review feedback）。
@@ -111,8 +119,12 @@ project_path: ".."              # 项目根目录（相对本文件）/ project 
 registry_path: "data/registry.json"
 reports_path: "data/reports"
 patches_path: "data/patches"
+evidence_path: "data/evidence"  # v2 证据文档 / evidence documents
+metrics_path: "data/metrics"    # v2 指标输出 / metrics output
 feedback_path: "data/feedback.jsonl"
 model: "deepseek-chat"          # 或 gpt-4o-mini 等 OpenAI 兼容模型 / or any compatible model
+# discovery / freshness / owners 功能段均有默认值，可选配置
+# discovery / freshness / owners sections are optional and have defaults
 ```
 
 详见 / See also: [docs/CONFIG.md](docs/CONFIG.md)
@@ -122,8 +134,15 @@ model: "deepseek-chat"          # 或 gpt-4o-mini 等 OpenAI 兼容模型 / or a
 ```json
 {
   "id": "payment_retry",
-  "name": "支付重试 / Payment retry",
-  "file_pattern": "src/payment/retry.py",
+  "title": "支付重试 / Payment retry",
+  "summary": "支付重试上限为 3 次，超时后触发补偿流程。",
+  "rationale": "网关幂等性仅在 3 次内保证，超过 3 次有重复扣款风险。",
+  "scope": { "files": ["src/payment/retry.py"], "symbols": ["PaymentRetry", "MAX_RETRY"] },
+  "evidence": [{ "type": "commit", "id": "a13f9c2" }],
+  "confidence": 0.6,
+  "owner": "payment-team",
+  "reviewer": null,
+  "status": "active",
   "risk_level": "HIGH",
   "knowledge_delta": { "ops": [ { "insert": "支付重试上限为 3 次，超时后触发补偿流程。" } ] },
   "related_docs": ["docs/payment-spec.md"],
@@ -133,12 +152,14 @@ model: "deepseek-chat"          # 或 gpt-4o-mini 等 OpenAI 兼容模型 / or a
 }
 ```
 
-`file_pattern` 支持 glob（`src/payment/*.py`、`src/refund/**/*.py`），多个匹配时取最长匹配。
+`scope.files` 支持 glob（`src/payment/*.py`、`src/refund/**/*.py`），多个匹配时取最长匹配；
+`scope.symbols` 提供符号级回退匹配。状态机：`proposed → under_review → active → outdated → retired`，
+仅 `active` 参与注入。完整 schema 见 [docs/CONFIG.md](docs/CONFIG.md)。
 
 ## 原理 / How It Works
 
-1. **匹配**：`analyze_commit.py` 用 GitPython 提取 diff（函数/类/常量摘要），按 `file_pattern`
-   把变更文件映射到知识单元，未匹配文件记为 unmanaged。
+1. **匹配**：`analyze_commit.py` 用 GitPython 提取 diff（函数/类/常量摘要），按 `scope.files`
+   （v1 为 `file_pattern`）把变更文件映射到知识单元，未匹配文件记为 unmanaged。
 2. **生成**：按风险等级选择 Prompt（Few-shot 教 Quill Delta 操作），调用 LLM 生成补丁；
    输出必须通过 Delta 合法性校验与模糊词检查，失败自动重试。
 3. **审核**：补丁写入 `patches/`，附预览链接（Quill 静态预览器前后对比）进入人工/PR 审核；

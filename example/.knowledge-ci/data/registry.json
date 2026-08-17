@@ -1,11 +1,9 @@
 {
-  "version": 1,
+  "version": 2,
   "last_updated": "2026-08-17",
   "units": [
     {
       "id": "payment_retry",
-      "name": "支付重试 / Payment retry",
-      "file_pattern": "src/payment/retry.py",
       "risk_level": "HIGH",
       "knowledge_delta": {
         "ops": [
@@ -14,15 +12,29 @@
           }
         ]
       },
-      "related_docs": ["docs/payment-spec.md"],
+      "related_docs": [
+        "docs/payment-spec.md"
+      ],
       "last_verified": "2026-08-17",
       "code_hash": "",
-      "version": 1
+      "version": 1,
+      "title": "支付重试 / Payment retry",
+      "summary": "",
+      "rationale": "",
+      "scope": {
+        "files": [
+          "src/payment/retry.py"
+        ],
+        "symbols": []
+      },
+      "evidence": [],
+      "confidence": null,
+      "owner": null,
+      "reviewer": null,
+      "status": "active"
     },
     {
       "id": "payment_refund",
-      "name": "支付退款 / Payment refund",
-      "file_pattern": "src/payment/refund.py",
       "risk_level": "HIGH",
       "knowledge_delta": {
         "ops": [
@@ -31,10 +43,26 @@
           }
         ]
       },
-      "related_docs": ["docs/payment-spec.md"],
+      "related_docs": [
+        "docs/payment-spec.md"
+      ],
       "last_verified": "2026-08-17",
       "code_hash": "",
-      "version": 1
+      "version": 1,
+      "title": "支付退款 / Payment refund",
+      "summary": "",
+      "rationale": "",
+      "scope": {
+        "files": [
+          "src/payment/refund.py"
+        ],
+        "symbols": []
+      },
+      "evidence": [],
+      "confidence": null,
+      "owner": null,
+      "reviewer": null,
+      "status": "active"
     }
   ]
 }
