@@ -66,8 +66,14 @@ class DiscoverTest(unittest.TestCase):
             self.assertTrue(report["candidate_count"] >= 1)
             for candidate in report["candidates"]:
                 self.assertEqual(candidate["status"], "proposed")
-                self.assertIsNone(candidate["confidence"])
+                self.assertIn("signal_kind", candidate)
+                # Git-backed candidates carry computed confidence and questions.
+                self.assertIsNotNone(candidate["confidence"])
+                self.assertGreaterEqual(candidate["confidence"], 0.0)
+                self.assertLessEqual(candidate["confidence"], 1.0)
                 self.assertTrue(candidate["questions"])
+            # Top modules carry owner inference.
+            self.assertIn("owners", report["top_modules"][0])
             payload = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["candidate_count"], report["candidate_count"])
 

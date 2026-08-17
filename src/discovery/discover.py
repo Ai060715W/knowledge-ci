@@ -4,9 +4,10 @@ from __future__ import annotations
 candidate drafts (status ``proposed``) + owner questions, written as a
 reviewable JSON report.
 
-The report is the only output of v1: nothing is written into any registry, and
-no LLM is called. Candidate drafts are rule-based and clearly marked as
-unconfirmed (``confidence: null``).
+The report is the only output of discovery: nothing is written into any
+registry, and no LLM is called. Candidate drafts are rule-based, carry a
+computed confidence (``src/evidence/confidence.py``), and clearly mark
+inferred owners as suggestions (``owner_inferred: true``).
 """
 
 import hashlib
@@ -18,53 +19,19 @@ from typing import Any
 from git import Repo
 
 from src.discovery.depgraph import ModuleGraph, build_graph
-from src.discovery.evidence import MAX_COMMITS_PER_SYMBOL, module_history, symbol_history
+from src.discovery.evidence import (
+    MAX_COMMITS_PER_SYMBOL,
+    infer_owners,
+    module_history,
+    symbol_history,
+)
 from src.discovery.scoring import score_modules
 from src.discovery.signals import Signal, detect_signals
+from src.evidence.confidence import compute_confidence
+from src.evidence.questions import SIGNAL_LABELS, build_candidate_questions
 from src.registry.schema import unit_patterns
 
-__all__ = ["QUESTION_TEMPLATES", "SIGNAL_LABELS", "run_discovery"]
-
-SIGNAL_LABELS: dict[str, tuple[str, str]] = {
-    "magic_number": ("魔法数字/硬编码阈值", "magic number / hardcoded threshold"),
-    "global_instance": ("模块级全局实例", "module-level global instance"),
-    "bridge_compat": ("兼容/桥接层", "compatibility / bridge layer"),
-    "long_function": ("超长函数", "long function"),
-    "long_class": ("超长类", "long class"),
-    "dependency_cycle": ("循环依赖", "dependency cycle"),
-    "reverted_history": ("频繁回滚历史", "reverted history"),
-}
-
-QUESTION_TEMPLATES: dict[str, list[tuple[str, str]]] = {
-    "magic_number": [
-        ("这个数值来自业务规则、协议还是经验阈值？", "Is this value a business rule, a protocol constant, or an experience threshold?"),
-        ("修改它会破坏什么历史行为？", "What historical behavior would changing it break?"),
-    ],
-    "global_instance": [
-        ("为什么这里必须使用全局单例/全局实例？", "Why must this be a global singleton/instance?"),
-        ("它的生命周期、线程安全与测试隔离如何保证？", "How are its lifecycle, thread safety, and test isolation guaranteed?"),
-    ],
-    "bridge_compat": [
-        ("该桥接/兼容层是否用于兼容历史版本？", "Does this bridge/compat layer exist for backward compatibility?"),
-        ("删除它会影响哪些历史场景？", "Which historical scenarios would break if it were removed?"),
-    ],
-    "long_function": [
-        ("为什么这段逻辑长期保持超长且未拆分？", "Why has this logic stayed this long without being split?"),
-        ("它是否承载了隐含的执行顺序或状态约束？", "Does it carry implicit ordering or state constraints?"),
-    ],
-    "long_class": [
-        ("这个类的职责边界是什么，为什么长期未拆分？", "What is this class's responsibility boundary, and why has it stayed unsplit?"),
-    ],
-    "dependency_cycle": [
-        ("这个循环依赖是历史包袱还是设计意图？", "Is this dependency cycle historical baggage or intentional design?"),
-        ("修改这个模块时需要注意什么初始化顺序？", "What initialization order must be respected when modifying this module?"),
-    ],
-    "reverted_history": [
-        ("这里是否发生过线上事故或回滚？", "Did an incident or rollback happen here?"),
-        ("当时回滚的原因是什么，现在是否仍然成立？", "Why was it reverted, and is that reason still valid?"),
-    ],
-}
-
+__all__ = ["run_discovery"]
 
 def _head_commit(repo_root: Path) -> str | None:
     repo = None
@@ -101,12 +68,16 @@ def _build_candidate(
     evidence: list[dict[str, Any]],
     head_sha: str | None,
     index: int,
+    settings: dict[str, Any] | None,
+    owners: dict[str, Any],
 ) -> dict[str, Any]:
     label_zh, label_en = SIGNAL_LABELS[signal.kind]
     candidate_id = f"cand_{module.replace('.', '_')}_{index:03d}"
     evidence_ids = ", ".join(item["short_id"] for item in evidence) or "无"
+    suggested_owner = (owners.get("suggested") or [None])[0]
     return {
         "id": candidate_id,
+        "signal_kind": signal.kind,
         "title": f"{label_zh} / {label_en}: {module}（待人工确认 / pending review）",
         "summary": signal.detail,
         "rationale": (
@@ -115,8 +86,9 @@ def _build_candidate(
         ),
         "scope": {"files": [path], "symbols": signal.symbols or []},
         "evidence": evidence,
-        "confidence": None,
-        "owner": None,
+        "confidence": compute_confidence(evidence, settings),
+        "owner": suggested_owner,
+        "owner_inferred": suggested_owner is not None,
         "reviewer": None,
         "status": "proposed",
         "knowledge_delta": {"ops": [{"insert": signal.detail}]},
@@ -215,8 +187,15 @@ def run_discovery(
         path = entry["path"]
         module_signals = signals.get(module, [])[:max_signals_per_module]
         module_evidence: list[dict[str, Any]] = []
+        owners: dict[str, Any] = {
+            "codeowners": [],
+            "blame_authors": [],
+            "suggested": [],
+            "inferred": False,
+        }
         if is_git:
             module_evidence = module_history(root, path)
+            owners = infer_owners(root, path)
         top_entry: dict[str, Any] = {
             "module": module,
             "path": path,
@@ -224,6 +203,7 @@ def run_discovery(
             "factors": entry["factors"],
             "signals": [signal.to_dict() for signal in module_signals],
             "evidence": module_evidence,
+            "owners": owners,
             "existing_unit": existing_units.get(path),
         }
         top_modules.append(top_entry)
@@ -234,11 +214,10 @@ def run_discovery(
                 if is_git:
                     evidence_batches.append(symbol_history(root, path, symbol))
             evidence = _merge_evidence(evidence_batches, cap=MAX_COMMITS_PER_SYMBOL + 3)
-            candidate = _build_candidate(module, path, signal, evidence, head_sha, index)
-            questions = [
-                {"zh": zh, "en": en} for zh, en in QUESTION_TEMPLATES.get(signal.kind, [])
-            ]
-            candidate["questions"] = questions
+            candidate = _build_candidate(
+                module, path, signal, evidence, head_sha, index, settings, owners
+            )
+            candidate["questions"] = build_candidate_questions(signal.kind, evidence)
             candidates.append(candidate)
             index += 1
 
