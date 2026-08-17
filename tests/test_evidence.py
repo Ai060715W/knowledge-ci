@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.discovery.evidence import module_history, symbol_history
+from src.discovery.evidence import infer_owners, module_history, symbol_history
 
 
 def init_repo(root: Path) -> None:
@@ -60,6 +60,52 @@ class EvidenceTest(unittest.TestCase):
             (root / "mod.py").write_text("X = 1\n", encoding="utf-8")
             self.assertEqual(module_history(root, "mod.py"), [])
             self.assertEqual(symbol_history(root, "mod.py", "X"), [])
+
+
+class OwnersTest(unittest.TestCase):
+    def make_repo(self, temp: str) -> Path:
+        root = Path(temp)
+        init_repo(root)
+        (root / "mod.py").write_text("X = 1\nY = 2\nZ = 3\n", encoding="utf-8")
+        commit(root, "initial")
+        (root / "mod.py").write_text("X = 1\nY = 2\nZ = 4\n", encoding="utf-8")
+        commit(root, "tweak")
+        return root
+
+    def test_blame_fallback_suggests_top_author(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = self.make_repo(temp)
+            owners = infer_owners(root, "mod.py")
+        self.assertEqual(owners["codeowners"], [])
+        self.assertTrue(owners["inferred"])
+        self.assertGreaterEqual(len(owners["blame_authors"]), 1)
+        suggested = owners["suggested"][0]
+        self.assertIn("t@example.com", suggested)
+
+    def test_codeowners_takes_priority(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = self.make_repo(temp)
+            (root / ".github").mkdir()
+            (root / ".github" / "CODEOWNERS").write_text("mod.py @core-team\n", encoding="utf-8")
+            owners = infer_owners(root, "mod.py")
+        self.assertEqual(owners["codeowners"], ["@core-team"])
+        self.assertEqual(owners["suggested"], ["@core-team"])
+
+    def test_explicit_codeowners_path(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = self.make_repo(temp)
+            codeowners = Path(temp) / "OWNERS.custom"
+            codeowners.write_text("mod.py @custom-team\n", encoding="utf-8")
+            owners = infer_owners(root, "mod.py", codeowners_path=codeowners)
+        self.assertEqual(owners["codeowners"], ["@custom-team"])
+        self.assertEqual(owners["suggested"], ["@custom-team"])
+
+    def test_non_git_directory_yields_empty_suggestion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "mod.py").write_text("X = 1\n", encoding="utf-8")
+            owners = infer_owners(root, "mod.py")
+        self.assertEqual(owners, {"codeowners": [], "blame_authors": [], "suggested": [], "inferred": False})
 
 
 if __name__ == "__main__":

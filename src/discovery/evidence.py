@@ -7,6 +7,7 @@ subject) so a human reviewer can verify the claim. v1 is read-only and works
 on any local git repository without platform accounts.
 """
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -14,10 +15,20 @@ from git import Repo
 
 from src.discovery.scoring import REVERT_PATTERNS
 
-__all__ = ["MAX_COMMITS_PER_SYMBOL", "module_history", "symbol_history"]
+__all__ = [
+    "MAX_COMMITS_PER_SYMBOL",
+    "MAX_BLAME_LINES",
+    "infer_owners",
+    "module_history",
+    "symbol_history",
+]
 
 #: Cap on history entries returned per symbol/module to keep reports readable.
 MAX_COMMITS_PER_SYMBOL = 5
+
+#: Lines sampled from ``git blame`` when inferring owners (the first lines of
+#: a file usually carry its original authorship).
+MAX_BLAME_LINES = 200
 
 
 def _format_commit(commit: Any, role: str) -> dict[str, Any]:
@@ -106,3 +117,124 @@ def symbol_history(
     if len(commits) > max_commits:
         evidence.append(_format_commit(commits[-1], "introduced"))
     return evidence
+
+
+_AUTHOR_MAIL_RE = re.compile(r"^author-mail <(.*)>$")
+_AUTHOR_NAME_RE = re.compile(r"^author (.*)$")
+
+
+def _blame_authors(repo: Repo, module_path: str) -> list[dict[str, Any]]:
+    """Author line counts for the first lines of ``module_path`` via git blame.
+
+    Returns [{"email", "name", "lines"}] sorted by line count, descending.
+    """
+    try:
+        output = repo.git.blame(
+            "--porcelain", "-L", f"1,{MAX_BLAME_LINES}", "--", module_path
+        )
+    except Exception:
+        return []
+
+    counts: dict[str, dict[str, Any]] = {}
+    pending_email: str | None = None
+    pending_name: str = ""
+    for raw_line in output.splitlines():
+        if raw_line.startswith("\t"):
+            if pending_email:
+                entry = counts.setdefault(
+                    pending_email, {"email": pending_email, "name": pending_name, "lines": 0}
+                )
+                entry["lines"] += 1
+            continue
+        mail_match = _AUTHOR_MAIL_RE.match(raw_line)
+        if mail_match:
+            pending_email = mail_match.group(1)
+            continue
+        name_match = _AUTHOR_NAME_RE.match(raw_line)
+        if name_match:
+            pending_name = name_match.group(1)
+
+    authors = sorted(counts.values(), key=lambda item: (-item["lines"], item["email"]))
+    return authors
+
+
+def infer_owners(
+    repo_path: str | Path,
+    module_path: str,
+    codeowners_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Infer suggested owners for a module.
+
+    Resolution order (all values are *suggestions*; confirmation is always a
+    human action):
+
+    1. CODEOWNERS entries matching ``module_path`` (explicit file when
+       ``codeowners_path`` is given, otherwise the conventional locations
+       CODEOWNERS / .github/CODEOWNERS / docs/CODEOWNERS).
+    2. ``git blame`` top authors (by line count over the first
+       ``MAX_BLAME_LINES`` lines).
+
+    Returns::
+
+        {"codeowners": [...], "blame_authors": [...], "suggested": [...],
+         "inferred": true}
+    """
+    root = Path(repo_path)
+    codeowners: list[str] = []
+    if codeowners_path is None:
+        from src.patch.pr_manager import discover_codeowners
+
+        try:
+            codeowners = discover_codeowners(root, [module_path])
+        except (OSError, ValueError):
+            codeowners = []
+    else:
+        codeowners = _codeowners_for_path(Path(codeowners_path), module_path)
+
+    repo = None
+    blame_authors: list[dict[str, Any]] = []
+    try:
+        repo = Repo(root)
+        blame_authors = _blame_authors(repo, module_path)
+    except Exception:
+        blame_authors = []
+    finally:
+        if repo is not None:
+            try:
+                repo.close()
+            except Exception:
+                pass
+
+    suggested: list[str] = []
+    if codeowners:
+        suggested = [entry for entry in codeowners]
+    elif blame_authors:
+        top = blame_authors[0]
+        suggested = [f"{top['name']} <{top['email']}>" if top.get("name") else top["email"]]
+
+    return {
+        "codeowners": codeowners,
+        "blame_authors": blame_authors,
+        "suggested": suggested,
+        "inferred": bool(suggested),
+    }
+
+
+def _codeowners_for_path(codeowners_file: Path, module_path: str) -> list[str]:
+    """Owners from an explicit CODEOWNERS file matching ``module_path``."""
+    from fnmatch import fnmatch
+
+    if not codeowners_file.is_file():
+        return []
+    owners: set[str] = set()
+    for raw_line in codeowners_file.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        pattern, matched_owners = parts[0].lstrip("/"), parts[1:]
+        if fnmatch(module_path, pattern) or fnmatch(module_path, f"{pattern}*"):
+            owners.update(matched_owners)
+    return sorted(owners)
