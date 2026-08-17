@@ -6,6 +6,7 @@ venv/
 
 # Tooling
 .pytest_cache/
+.vscode/settings.json
 
 # Secrets
 .env
