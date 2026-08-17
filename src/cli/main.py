@@ -10,7 +10,19 @@ import argparse
 import sys
 from typing import Any
 
-from src.cli import apply, analyze, ask_owner, check_llm, discover, feedback, generate, init, inject, migrate
+from src.cli import (
+    apply,
+    analyze,
+    ask_owner,
+    check_llm,
+    discover,
+    feedback,
+    freshness,
+    generate,
+    init,
+    inject,
+    migrate,
+)
 
 
 COMMANDS: dict[str, Any] = {
@@ -18,6 +30,7 @@ COMMANDS: dict[str, Any] = {
     "analyze": analyze,
     "discover": discover,
     "ask-owner": ask_owner,
+    "freshness": freshness,
     "generate": generate,
     "apply": apply,
     "inject": inject,

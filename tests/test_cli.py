@@ -1,6 +1,18 @@
 import unittest
 
-from src.cli import apply, analyze, ask_owner, check_llm, discover, feedback, generate, init, inject, migrate
+from src.cli import (
+    apply,
+    analyze,
+    ask_owner,
+    check_llm,
+    discover,
+    feedback,
+    freshness,
+    generate,
+    init,
+    inject,
+    migrate,
+)
 from src.cli.main import COMMANDS, build_parser
 
 
@@ -13,6 +25,7 @@ class KcCliTest(unittest.TestCase):
                 "analyze",
                 "discover",
                 "ask-owner",
+                "freshness",
                 "generate",
                 "apply",
                 "inject",
@@ -63,6 +76,7 @@ class ModuleInterfaceTest(unittest.TestCase):
             analyze,
             discover,
             ask_owner,
+            freshness,
             generate,
             apply,
             inject,
