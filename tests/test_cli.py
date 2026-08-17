@@ -1,6 +1,6 @@
 import unittest
 
-from src.cli import apply, analyze, check_llm, discover, feedback, generate, init, inject, migrate
+from src.cli import apply, analyze, ask_owner, check_llm, discover, feedback, generate, init, inject, migrate
 from src.cli.main import COMMANDS, build_parser
 
 
@@ -8,7 +8,18 @@ class KcCliTest(unittest.TestCase):
     def test_all_commands_registered(self):
         self.assertEqual(
             set(COMMANDS),
-            {"init", "analyze", "discover", "generate", "apply", "inject", "feedback", "check-llm", "migrate"},
+            {
+                "init",
+                "analyze",
+                "discover",
+                "ask-owner",
+                "generate",
+                "apply",
+                "inject",
+                "feedback",
+                "check-llm",
+                "migrate",
+            },
         )
 
     def test_each_command_has_help_and_run(self):
@@ -47,7 +58,18 @@ class KcCliTest(unittest.TestCase):
 
 class ModuleInterfaceTest(unittest.TestCase):
     def test_module_surface(self):
-        for module in (init, analyze, discover, generate, apply, inject, feedback, check_llm, migrate):
+        for module in (
+            init,
+            analyze,
+            discover,
+            ask_owner,
+            generate,
+            apply,
+            inject,
+            feedback,
+            check_llm,
+            migrate,
+        ):
             with self.subTest(module=module.__name__):
                 self.assertTrue(module.HELP)
                 self.assertTrue(callable(module.main))
