@@ -29,6 +29,8 @@ discovery:              # 隐藏知识发现 / hidden knowledge discovery
   enabled: true
   languages: [python]   # v1 仅解析 Python / v1 parses Python only
   top_k: 10
+  long_span_lines: 80   # 超长函数/类阈值 / long function/class threshold
+  exclude_paths: []     # 从发现/评分中排除的路径（前缀或 glob），如 ["tests"] / paths to exclude (prefix or glob)
   weights:              # ModuleScore 公式权重 / scoring formula weights
     change_frequency: 1.0
     dependency_centrality: 1.0

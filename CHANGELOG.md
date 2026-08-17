@@ -14,6 +14,16 @@ All notable changes to this project will be documented in this file.
 - Config sections `discovery` / `freshness` / `owners` with defaults (`load_settings`), plus `evidence_path`/`metrics_path`.
 - 54 new unit tests (schema, state machine, migration, store, CLI) — 87 total, all passing.
 
+### Added (Plan 1: hidden knowledge discovery MVP)
+
+- `src/discovery/depgraph.py`: stdlib-`ast` dependency graph (import/use/inherit edges, module + symbol level, degree centrality, cross-layer impact, Tarjan import cycles, per-commit JSON cache, graceful syntax-error skipping).
+- `src/discovery/scoring.py`: design-doc formula `α·改动频率 + β·依赖中心性 + γ·事故 + δ·回滚 + ε·贡献者熵 + ζ·跨层影响` with configurable weights, one-pass `git log` history stats.
+- `src/discovery/signals.py`: magic numbers, module-level global instances, compatibility/bridge layers, long functions/classes, dependency cycles, revert history.
+- `src/discovery/evidence.py`: traceable git evidence (introduced/modified/reverted commits, `-G` diff search per symbol).
+- `kc discover` / `scripts/discover.py`: read-only, LLM-free analysis of any repository (`--repo`); writes a JSON report with Top-K modules, candidate drafts (`status: proposed`, `confidence: null`), and bilingual owner questions. Graceful degradation for non-git dirs and repos without Python files; `discovery.exclude_paths` config.
+- 35 new hermetic tests — 122 total, all passing.
+- Validated on `psf/requests` (@80683562): 37 modules scanned, Top-10 + 24 candidates + 47 questions; `exclude_paths: [tests]` re-ranking verified.
+
 ## [0.1.0] - 2026-08-17
 
 Initial open-source release, generalized from the 4-week Knowledge CI POC.

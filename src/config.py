@@ -15,6 +15,8 @@ CONFIG_DEFAULTS: dict[str, Any] = {
         "enabled": True,
         "languages": ["python"],
         "top_k": 10,
+        "long_span_lines": 80,
+        "exclude_paths": [],
         "weights": {
             "change_frequency": 1.0,
             "dependency_centrality": 1.0,
