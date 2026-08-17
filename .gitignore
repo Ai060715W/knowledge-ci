@@ -11,6 +11,10 @@ venv/
 # Secrets
 .env
 
+# Local-only planning documents (kept out of the public repository)
+docs/GAP_PLAN.md
+docs/IMPLEMENTATION_PLAN.md
+
 # Per-user Knowledge CI artifacts (keep these out of the template repo)
 data/patches/*.json
 data/reports/*.json
