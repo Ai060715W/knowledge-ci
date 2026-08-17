@@ -17,6 +17,14 @@ CONFIG_DEFAULTS: dict[str, Any] = {
         "top_k": 10,
         "long_span_lines": 80,
         "exclude_paths": [],
+        "confidence_weights": {
+            "code": 0.2,
+            "commit": 0.3,
+            "mr": 0.5,
+            "issue": 0.4,
+            "incident": 0.6,
+            "human_answer": 0.9,
+        },
         "weights": {
             "change_frequency": 1.0,
             "dependency_centrality": 1.0,

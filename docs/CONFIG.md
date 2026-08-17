@@ -31,6 +31,13 @@ discovery:              # 隐藏知识发现 / hidden knowledge discovery
   top_k: 10
   long_span_lines: 80   # 超长函数/类阈值 / long function/class threshold
   exclude_paths: []     # 从发现/评分中排除的路径（前缀或 glob），如 ["tests"] / paths to exclude (prefix or glob)
+  confidence_weights:   # 置信度公式的按证据类型权重 / confidence weights by evidence type
+    code: 0.2
+    commit: 0.3
+    mr: 0.5
+    issue: 0.4
+    incident: 0.6
+    human_answer: 0.9
   weights:              # ModuleScore 公式权重 / scoring formula weights
     change_frequency: 1.0
     dependency_centrality: 1.0
@@ -54,6 +61,33 @@ owners:                 # 负责人推断 / owner inference
 未写入配置文件的段使用上表默认值。
 In code: `load_settings(config_path)` in `src/config.py` merges these sections with
 the defaults above, so omitted sections still resolve to the documented values.
+
+## 证据链与追问 / Evidence Chain & Owner Questions
+
+`kc discover` 的候选自带证据链（commit 级、可回溯 hash）与置信度；
+`kc ask-owner` 完成"证据不足 → 追问 → 人工回答 → 候选落地"闭环：
+
+```powershell
+# 1. 发现候选 / discover candidates
+kc discover --repo C:\path\to\repo --out reports
+
+# 2. 生成追问文件 / generate the questions file
+kc ask-owner --action questions --report reports\discovery_<ts>.json
+
+# 3. 人工回答并确认落地 / answer and land the candidate
+kc ask-owner --action answer --questions reports\questions_<ts>.json `
+    --report reports\discovery_<ts>.json --candidate cand_xxx_001 `
+    --answer "该数值来自协议 SPEC-1，不能修改。" --owner payment-team `
+    --confirm --registry .knowledge-ci\data\registry.json
+```
+
+- 置信度公式 / confidence formula：`confidence = 1 - Π(1 - weight[type])`，对去重后的证据类型求积；
+  默认权重见上方 `confidence_weights`；无证据时为 `null`（未知，不等于 0）。
+- 负责人推断 / owner inference：CODEOWNERS 优先，缺失时用 `git blame` 行数最多的作者；
+  推断值一律带 `owner_inferred: true`，`--owner` 人工确认后变为 `false`。
+- `--confirm` 把候选写入注册表为 `status: under_review`，证据链追加 `human_answer` 并重算置信度，
+  之后复用现有补丁审核管线（generate → review → apply）走向 `active`。
+- 追问不依赖任何平台通知：v1 是本地 JSON 文件 + 人工回填。
 
 ## LLM 环境变量 / LLM Environment Variables
 

@@ -24,6 +24,16 @@ All notable changes to this project will be documented in this file.
 - 35 new hermetic tests — 122 total, all passing.
 - Validated on `psf/requests` (@80683562): 37 modules scanned, Top-10 + 24 candidates + 47 questions; `exclude_paths: [tests]` re-ranking verified.
 
+### Added (Plan 2: evidence chain aggregation & question loop)
+
+- `src/evidence/confidence.py`: documented confidence formula — noisy-OR over distinct evidence types, weighted `human_answer 0.9 > incident 0.6 > mr 0.5 > issue 0.4 > commit 0.3 > code 0.2` (configurable via `discovery.confidence_weights`); reproduces the design document's `0.93` example (commit + incident + human answer).
+- `src/evidence/questions.py`: bilingual question templates per signal kind, insufficiency detection (thin evidence chains get extra "where is the source / who owns this" questions), `questions_<ts>.json` documents with answer history.
+- `src/discovery/evidence.py` extension: owner inference — CODEOWNERS first (explicit path or conventional locations), `git blame` fallback (top author by line count); owners are always suggestions (`owner_inferred: true`) until a human confirms.
+- `kc ask-owner` / `scripts/ask_owner.py`: `--action questions` turns a discovery report into a questions file; `--action answer` records human answers and, with `--confirm`, lands the candidate into the registry as `status: under_review` (existing review pipeline takes over), adds a `human_answer` evidence item, and recomputes confidence.
+- Discovery reports now carry per-module `owners` inference and per-candidate `confidence`/`signal_kind`.
+- 32 new hermetic tests — 154 total, all passing.
+- Validated end-to-end on `psf/requests`: discover → questions → answer/confirm landed a candidate as `under_review` with confidence `0.93` (matching the design example) and owner inference correctly pointing at the module's original author.
+
 ## [0.1.0] - 2026-08-17
 
 Initial open-source release, generalized from the 4-week Knowledge CI POC.
