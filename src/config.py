@@ -39,6 +39,8 @@ CONFIG_DEFAULTS: dict[str, Any] = {
         "ast_semantic_filter": True,
         "dependency_impact": True,
         "llm_final_judge": True,
+        "indirect_depth": 2,
+        "llm_max_units": 20,
     },
     "owners": {
         "codeowners_path": "",

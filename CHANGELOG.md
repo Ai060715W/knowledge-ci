@@ -34,6 +34,16 @@ All notable changes to this project will be documented in this file.
 - 32 new hermetic tests — 154 total, all passing.
 - Validated end-to-end on `psf/requests`: discover → questions → answer/confirm landed a candidate as `under_review` with confidence `0.93` (matching the design example) and owner inference correctly pointing at the module's original author.
 
+### Added (Plan 3: knowledge freshness — four-layer funnel)
+
+- `src/freshness/layers.py`: layer 1 time anchor (`code_hash` → `last_verified` → `time_filter_days` fallback; missing files short-circuit to outdated), layer 2 normalized-AST semantic filter (comments/formatting/docstrings/import reordering/unused-local renames are noise; parse failures are conservative), layer 3 dependency impact (direct scope hits with symbol intersection, indirect hits within `indirect_depth` edges of the dependency graph, either direction).
+- `src/freshness/llm.py`: layer 4 strict-JSON verdict (`still_valid`/`partial_update`/`outdated`/`new_knowledge`) with jsonschema validation, Delta-op validation for `partial_update`, fuzzy-word rejection, self-correction retries (≤3), and offline `--mock-response-file` mode.
+- `src/freshness/check.py` + `kc freshness`: read-only orchestrator by default; `--apply` only refreshes `last_verified`/`code_hash` and performs state-machine transitions (`active → outdated`); `--auto-patch` turns `partial_update` verdicts into PENDING patch files (human review still required); `--no-llm` and missing API keys degrade to `needs_llm`; `llm_max_units` caps per-run cost.
+- Every unit's result carries the full per-layer decision log (reasons, commits, per-file AST verdicts, dependency hits) in `freshness_<ts>.json`; `new_knowledge` drafts are exposed as `candidates` so `kc ask-owner` continues the loop.
+- Config: `freshness.indirect_depth` and `freshness.llm_max_units`.
+- 35 new hermetic tests — 189 total, all passing.
+- Validated on `psf/requests` (@80683562) with handcrafted units: all four verdicts hit; a comment-only commit was correctly filtered by layer 2 (`ast_noise`); a real 2024-era adapters unit flowed through 15 commits to the LLM layer with per-commit AST evidence; `--apply` state transitions, PENDING patch generation, and the ask-owner hand-off were verified end-to-end.
+
 ## [0.1.0] - 2026-08-17
 
 Initial open-source release, generalized from the 4-week Knowledge CI POC.

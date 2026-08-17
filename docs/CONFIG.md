@@ -47,10 +47,12 @@ discovery:              # 隐藏知识发现 / hidden knowledge discovery
     cross_layer_impact: 1.0
 
 freshness:              # 新鲜度四层判断 / 4-layer freshness pipeline
-  time_filter_days: 30
+  time_filter_days: 30  # 第 1 层无锚点时的回退时间窗（天）/ fallback window when no anchor exists
   ast_semantic_filter: true
   dependency_impact: true
   llm_final_judge: true
+  indirect_depth: 2     # 第 3 层间接命中的依赖边距离 / indirect-hit dependency edge depth
+  llm_max_units: 20     # 第 4 层单次运行的最大 LLM 单元数 / max units sent to the LLM per run
 
 owners:                 # 负责人推断 / owner inference
   codeowners_path: ""   # 留空自动探测 CODEOWNERS/.github/CODEOWNERS / empty = auto-detect
@@ -88,6 +90,41 @@ kc ask-owner --action answer --questions reports\questions_<ts>.json `
 - `--confirm` 把候选写入注册表为 `status: under_review`，证据链追加 `human_answer` 并重算置信度，
   之后复用现有补丁审核管线（generate → review → apply）走向 `active`。
 - 追问不依赖任何平台通知：v1 是本地 JSON 文件 + 人工回填。
+
+## 知识新鲜度 / Knowledge Freshness
+
+`kc freshness` 按四层漏斗判断每条 active 知识是否仍与代码一致，
+每层输出结构化决策日志（`layer`、`reason`、命中 commit/文件/依赖边），全程可解释：
+
+| 层 / Layer | 判定 / Decision | 成本 / Cost |
+|:---|:---|:---|
+| 1. 时间初筛 / time | 锚点（`code_hash` → `last_verified` → `time_filter_days` 天）之后无提交 → 仍新鲜；`scope.files` 全部缺失 → 直接 outdated | 零 |
+| 2. AST 语义过滤 / ast | 归一化 AST 对比：注释、格式化、docstring、import 排序、无引用局部重命名不算语义变更；解析失败保守视为语义变更 | 零 |
+| 3. 依赖影响 / impact | 变更文件直接命中 `scope.files`（声明 `symbols` 时须相交），或命中距离 ≤ `indirect_depth` 的上下游模块（依赖图可达性） | 零 |
+| 4. LLM 终判 / llm | `still_valid` / `partial_update`（附 Delta 补丁）/ `outdated` / `new_knowledge`（附候选草稿）；JSON schema 校验失败自动重试 ≤3 次 | 每次一次调用，单次运行上限 `llm_max_units` |
+
+```powershell
+# 只读检查（默认）/ read-only check (default)
+kc freshness --repo C:\path\to\repo --registry .knowledge-ci\data\registry.json
+
+# 应用安全簿记 / apply safe bookkeeping (timestamps + status transitions only)
+kc freshness --apply
+
+# 前三层即可 / stop before the LLM
+kc freshness --no-llm
+
+# partial_update 自动生成 PENDING 补丁（仍需人工审核落地）
+kc freshness --auto-patch --patches .knowledge-ci\data\patches
+
+# 离线验证第 4 层 / offline layer-4 verification
+kc freshness --mock-response-file verdict.json
+```
+
+- **只读默认**：freshness 永不修改知识文本；`--apply` 仅刷新 `last_verified`/`code_hash`
+  与状态机流转（`active → outdated`），`partial_update` 补丁永远是 `PENDING`。
+- 未配置 LLM Key 时，进入第 4 层的单元标记 `needs_llm`，不报错退出。
+- `new_knowledge` 候选草稿在报告里以 `candidates` 暴露，可直接交给 `kc ask-owner` 走追问闭环。
+- 报告落盘：`reports/freshness_<ts>.json`。
 
 ## LLM 环境变量 / LLM Environment Variables
 

@@ -96,6 +96,7 @@ Run from your project directory (config is auto-discovered).
 | `python <kc>/scripts/analyze_commit.py --hash <commit>`（或 `kc analyze`）/ or `kc analyze` | 分析提交影响，产出报告 / impact report |
 | `python <kc>/scripts/discover.py --repo <path>`（或 `kc discover`）/ or `kc discover` | 隐藏知识发现：Top-K 模块 + 候选知识 + 追问清单（只读，不调 LLM）/ hidden knowledge discovery (read-only, no LLM) |
 | `python <kc>/scripts/ask_owner.py --action ...`（或 `kc ask-owner`）/ or `kc ask-owner` | 证据链追问与回填：生成追问文件、人工回答回填、`--confirm` 候选升级 under_review / evidence questions, human answers, candidate landing |
+| `python <kc>/scripts/freshness.py`（或 `kc freshness`）/ or `kc freshness` | 知识新鲜度四层判断（时间 → AST 语义 → 依赖影响 → LLM），只读默认，`--apply` 仅做安全状态流转 / 4-layer freshness check, read-only by default |
 | `python <kc>/scripts/generate_patch.py --commit <c> --unit <id>`（或 `kc generate`）/ or `kc generate` | LLM 生成知识补丁 / generate a patch |
 | `python <kc>/scripts/apply_patch.py --patch <file>`（或 `kc apply`）/ or `kc apply` | 审核通过后落地补丁 / apply an approved patch |
 | `python <kc>/scripts/inject_context.py --file <path>`（或 `kc inject`）/ or `kc inject` | AI 编码前注入上下文 / inject context |

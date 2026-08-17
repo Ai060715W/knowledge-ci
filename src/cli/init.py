@@ -70,6 +70,8 @@ freshness:
   ast_semantic_filter: true
   dependency_impact: true
   llm_final_judge: true
+  indirect_depth: 2
+  llm_max_units: 20
 
 # Owner resolution (see docs/CONFIG.md).
 owners:
