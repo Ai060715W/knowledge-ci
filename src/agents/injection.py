@@ -5,12 +5,15 @@ from __future__ import annotations
 Wraps the existing injection pipeline (``src.inject.context``) and returns
 the exact text an AI coding session would receive for each file — so a
 pipeline run can prove what knowledge would have reached the developer.
+Without a registry every file degrades to an unmatched preview instead of
+failing.
 """
 
 from pathlib import Path
 from typing import Any
 
 from src.agents.base import Agent, register
+from src.agents.schemas import PREVIEW_SCHEMA, array_of, object_with
 from src.inject.context import DEFAULT_MAX_TOKENS, build_context, format_context, knowledge_block
 
 
@@ -19,40 +22,22 @@ class InjectionAgent(Agent):
     name = "injection"
     role = "Context selection: the minimal sufficient knowledge for concrete files"
 
-    input_schema = {
-        "type": "object",
-        "required": ["repo", "file_paths"],
-        "properties": {
+    input_schema = object_with(
+        properties={
             "repo": {"type": "string", "minLength": 1},
-            "file_paths": {"type": "array", "items": {"type": "string"}},
+            "file_paths": array_of({"type": "string"}),
             "registry_path": {"type": "string"},
             "reports_path": {"type": "string"},
             "patches_path": {"type": "string"},
             "max_tokens": {"type": "integer", "minimum": 1},
         },
-        "additionalProperties": True,
-    }
+        required=["repo", "file_paths"],
+    )
 
-    output_schema = {
-        "type": "object",
-        "required": ["previews"],
-        "properties": {
-            "previews": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": ["file", "matched", "text"],
-                    "properties": {
-                        "file": {"type": "string"},
-                        "matched": {"type": "boolean"},
-                        "unit_id": {"type": "string"},
-                        "text": {"type": "string"},
-                        "estimated_tokens": {"type": "integer"},
-                    },
-                },
-            }
-        },
-    }
+    output_schema = object_with(
+        properties={"previews": array_of(PREVIEW_SCHEMA)},
+        required=["previews"],
+    )
 
     def run(self, task: dict[str, Any]) -> dict[str, Any]:
         repo_root = Path(task["repo"])

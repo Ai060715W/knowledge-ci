@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from src.agents.orchestrator import PIPELINE_ORDER, run_pipeline
 
@@ -71,14 +72,49 @@ class RunPipelineTest(unittest.TestCase):
             self.assertEqual(len(report["agents"]), 6)
             drafts = report["drafts"]
             self.assertTrue(drafts)
+            # Enriched candidates are persisted and the ask-owner alias exists.
+            self.assertTrue(report["enriched"])
+            self.assertEqual(report["candidates"], drafts)
+            # Multiple drafts hit the same unit -> only the highest-review-risk
+            # one becomes a proposal, the rest are deferred.
             proposals = [item for group in report["proposals"] for item in group.get("proposals", [])]
-            self.assertGreaterEqual(len(proposals), 1)
+            self.assertEqual(len(proposals), 1)
+            patch_stage = next(stage for stage in report["pipeline"] if stage["name"] == "patch")
+            self.assertGreaterEqual(len(patch_stage.get("deferred", [])), 1)
             patch_file = Path(proposals[0]["path"])
             patch = json.loads(patch_file.read_text(encoding="utf-8"))
             self.assertEqual(patch["status"], "PENDING")
             self.assertEqual(patch["unit_id"], "legacy_unit")
             self.assertTrue(report["reviews"])
-            self.assertTrue(report["injection_previews"])
+            # Injection targets registry scope files first -> matched preview.
+            matched = [p for p in report["injection_previews"] if p["matched"]]
+            self.assertGreaterEqual(len(matched), 1)
+            self.assertEqual(matched[0]["file"], "src/legacy.py")
+
+    def test_runtime_failure_is_isolated(self):
+        # A crashing agent must become a failed stage with error_type runtime,
+        # downstream stages skipped, and the pipeline still completes.
+        from src.agents.base import Agent
+        from src.agents.orchestrator import run_pipeline as run_pipeline_fn
+
+        class BrokenEvidence(Agent):
+            name = "evidence"
+
+            def run(self, task):
+                raise RuntimeError("boom")
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = self.make_repo(temp)
+            with mock.patch.dict("src.agents.base.AGENTS", {"evidence": BrokenEvidence}):
+                report, _ = run_pipeline_fn(root, out_dir=root / "out")
+        evidence_stage = next(stage for stage in report["pipeline"] if stage["name"] == "evidence")
+        self.assertEqual(evidence_stage["status"], "failed")
+        self.assertEqual(evidence_stage["error_type"], "runtime")
+        self.assertEqual(report["summary"]["knowledge"], "skipped")
+        self.assertEqual(report["summary"]["risk"], "skipped")
+        self.assertEqual(report["summary"]["review"], "skipped")
+        self.assertEqual(report["summary"]["injection"], "ok")
+        self.assertEqual(report["summary"]["patch"], "ok")
 
     def test_stop_after_knowledge(self):
         with tempfile.TemporaryDirectory() as temp:

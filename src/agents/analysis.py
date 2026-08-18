@@ -4,12 +4,13 @@ from __future__ import annotations
 
 Wraps plan 1 (``src.discovery``): builds the dependency graph, scores
 modules, detects structural signals, and writes the discovery report.
+The report (+ its graph cache) is the agent's declared write effect.
 """
 
-from pathlib import Path
 from typing import Any
 
 from src.agents.base import Agent, register
+from src.agents.schemas import TOP_MODULE_SCHEMA, array_of, object_with
 from src.discovery.discover import run_discovery
 
 
@@ -17,41 +18,28 @@ from src.discovery.discover import run_discovery
 class AnalysisAgent(Agent):
     name = "analysis"
     role = "AST/dependency-graph analysis, Top-K module scoring, structural anomaly signals"
+    effects = ["artifacts:reports"]
 
-    input_schema = {
-        "type": "object",
-        "required": ["repo"],
-        "properties": {
+    input_schema = object_with(
+        properties={
             "repo": {"type": "string", "minLength": 1},
             "settings": {"type": "object"},
             "top_k": {"type": "integer", "minimum": 1},
             "out_dir": {"type": "string"},
             "registry_path": {"type": "string"},
         },
-        "additionalProperties": True,
-    }
+        required=["repo"],
+    )
 
-    output_schema = {
-        "type": "object",
-        "required": ["report_path", "modules_scanned", "candidates", "top_modules"],
-        "properties": {
+    output_schema = object_with(
+        properties={
             "report_path": {"type": "string"},
             "modules_scanned": {"type": "integer"},
             "candidates": {"type": "integer"},
-            "top_modules": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": ["module", "path", "score"],
-                    "properties": {
-                        "module": {"type": "string"},
-                        "path": {"type": "string"},
-                        "score": {"type": "number"},
-                    },
-                },
-            },
+            "top_modules": array_of(TOP_MODULE_SCHEMA),
         },
-    }
+        required=["report_path", "modules_scanned", "candidates", "top_modules"],
+    )
 
     def run(self, task: dict[str, Any]) -> dict[str, Any]:
         report, output_path = run_discovery(

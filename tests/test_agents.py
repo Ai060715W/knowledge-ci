@@ -57,6 +57,8 @@ class ProtocolTest(unittest.TestCase):
             with self.subTest(agent=name):
                 self.assertTrue(agent_class.name)
                 self.assertTrue(agent_class.role)
+                self.assertTrue(agent_class.version)
+                self.assertTrue(agent_class.effects)
                 self.assertIn("type", agent_class.input_schema)
                 self.assertIn("type", agent_class.output_schema)
 
@@ -66,6 +68,21 @@ class ProtocolTest(unittest.TestCase):
         for description in descriptions:
             self.assertIn("input_schema", description)
             self.assertIn("output_schema", description)
+            self.assertIn("version", description)
+            self.assertIn("effects", description)
+
+    def test_analysis_declares_report_effects_others_none(self):
+        descriptions = {item["name"]: item for item in describe_agents()}
+        self.assertEqual(descriptions["analysis"]["effects"], ["artifacts:reports"])
+        for name in ("evidence", "knowledge", "risk", "review", "injection"):
+            self.assertEqual(descriptions[name]["effects"], ["none"], name)
+
+    def test_strict_schemas_reject_undeclared_fields(self):
+        # A task carrying an unknown field must fail the strict contract.
+        errors = KnowledgeAgent.validate_input(
+            {"candidates": [make_candidate()], "unexpected_field": True}
+        )
+        self.assertTrue(any("unexpected_field" in error for error in errors))
 
     def test_registry_rejects_duplicates_and_empty_names(self):
         with self.assertRaises(ValueError):
@@ -111,28 +128,28 @@ class EvidenceAgentTest(unittest.TestCase):
             )
             output = EvidenceAgent().run({"discovery_report_path": str(report_path)})
         self.assertEqual(EvidenceAgent.validate_output(output), [])
-        entry = output["enriched"][0]
+        entry = output["candidates"][0]
         self.assertEqual(entry["id"], "cand_x_001")
         self.assertEqual(entry["evidence_count"], 2)
+        self.assertEqual(entry["evidence_ids"], ["abc", "def"])
         self.assertIsNotNone(entry["confidence"])
 
 
 class KnowledgeAgentTest(unittest.TestCase):
     def test_drafts_are_proposed_units_with_questions(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            report_path = root / "discovery.json"
-            report_path.write_text(
-                json.dumps({"candidates": [make_candidate()]}, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            output = KnowledgeAgent().run({"discovery_report_path": str(report_path)})
+        output = KnowledgeAgent().run({"candidates": [make_candidate()]})
         self.assertEqual(KnowledgeAgent.validate_output(output), [])
         draft = output["drafts"][0]
         self.assertEqual(draft["status"], "proposed")
         self.assertEqual(draft["signal_kind"], "magic_number")
         self.assertTrue(draft["questions"])
         self.assertEqual(output["question_count"], len(draft["questions"]))
+
+    def test_consumes_enriched_candidates_only(self):
+        # Knowledge takes the evidence agent's candidates; a missing input
+        # field is rejected by the strict schema.
+        errors = KnowledgeAgent.validate_input({})
+        self.assertTrue(errors)
 
 
 class RiskAgentTest(unittest.TestCase):
@@ -141,7 +158,7 @@ class RiskAgentTest(unittest.TestCase):
         self.assertEqual(RiskAgent.validate_output(output), [])
         return {item["id"]: item for item in output["risks"]}
 
-    def test_signal_kind_grading(self):
+    def test_signal_risk_grading(self):
         risks = self.run_risk(
             [
                 make_candidate(id="a", signal_kind="dependency_cycle"),
@@ -149,9 +166,42 @@ class RiskAgentTest(unittest.TestCase):
                 make_candidate(id="c", signal_kind="unknown"),
             ]
         )
-        self.assertEqual(risks["a"]["risk_level"], "HIGH")
-        self.assertEqual(risks["b"]["risk_level"], "LOW")
-        self.assertEqual(risks["c"]["risk_level"], "MEDIUM")
+        self.assertEqual(risks["a"]["signal_risk"], "HIGH")
+        self.assertEqual(risks["b"]["signal_risk"], "LOW")
+        self.assertEqual(risks["c"]["signal_risk"], "MEDIUM")
+
+    def test_review_risk_reflects_evidence_quality(self):
+        # Same signal kind, very different evidence quality -> different
+        # review risk (the split Codex asked for).
+        strong = make_candidate(id="strong", signal_kind="bridge_compat")
+        weak = make_candidate(
+            id="weak",
+            signal_kind="bridge_compat",
+            evidence=[],
+            owner=None,
+            confidence=None,
+        )
+        conflicting = make_candidate(
+            id="conflicting",
+            signal_kind="bridge_compat",
+            evidence=[{"type": "commit", "id": "r", "role": "reverted"}],
+        )
+        risks = self.run_risk([strong, weak, conflicting])
+        self.assertEqual(risks["strong"]["signal_risk"], "HIGH")
+        self.assertEqual(risks["strong"]["review_risk"], "HIGH")  # falls back to signal
+        self.assertEqual(risks["weak"]["review_risk"], "HIGH")    # >= 2 warnings
+        self.assertEqual(risks["conflicting"]["review_risk"], "HIGH")  # hard conflict
+
+        # A LOW-signal draft with hard conflicts shows the split clearly:
+        # signal_risk stays LOW while review_risk jumps to HIGH.
+        escalated = make_candidate(
+            id="escalated",
+            signal_kind="long_function",
+            evidence=[{"type": "commit", "id": "r", "role": "reverted"}],
+        )
+        risks = self.run_risk([escalated])
+        self.assertEqual(risks["escalated"]["signal_risk"], "LOW")
+        self.assertEqual(risks["escalated"]["review_risk"], "HIGH")
 
     def test_conflicts_and_warnings_detected(self):
         risks = self.run_risk(
@@ -185,6 +235,9 @@ class RiskAgentTest(unittest.TestCase):
 
 class ReviewAgentTest(unittest.TestCase):
     def run_review(self, drafts):
+        # Route fixtures through the knowledge agent so drafts carry the
+        # questions exactly as the real pipeline produces them.
+        drafts = KnowledgeAgent().run({"candidates": drafts})["drafts"]
         risks = RiskAgent().run({"drafts": drafts})["risks"]
         output = ReviewAgent().run({"drafts": drafts, "risks": risks})
         self.assertEqual(ReviewAgent.validate_output(output), [])
@@ -193,6 +246,14 @@ class ReviewAgentTest(unittest.TestCase):
     def test_ask_owner_when_thin_evidence(self):
         reviews = self.run_review([make_candidate(id="a", evidence=[], owner=None)])
         self.assertEqual(reviews["a"]["recommendation"], "ask_owner")
+        # The draft's questions ride along so the human loop can start
+        # directly from the run report.
+        self.assertTrue(reviews["a"]["questions"])
+
+    def test_confirm_carries_no_questions(self):
+        reviews = self.run_review([make_candidate(id="a")])
+        self.assertEqual(reviews["a"]["recommendation"], "confirm")
+        self.assertNotIn("questions", reviews["a"])
 
     def test_human_review_on_conflict(self):
         reviews = self.run_review(

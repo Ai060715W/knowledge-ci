@@ -2,21 +2,29 @@ from __future__ import annotations
 
 """Review agent: human-review assistance for knowledge drafts.
 
-For every draft it emits a diff-style summary and one recommendation:
+For every draft it emits a diff-style summary and one **recommendation**:
 
-- ``confirm``     — evidence >= 2 items, no conflicts, no inferred-only owner
-- ``ask_owner``   — insufficient evidence or no owner at all
-- ``human_review``— conflicts present or low confidence (verify manually)
+- ``confirm``      — evidence >= 2 items, no conflicts, confirmed owner,
+                     confidence >= 0.5 (0.5 = one mr or two commits of
+                     evidence strength in the confidence formula)
+- ``ask_owner``    — insufficient evidence or no owner; the draft's
+                     question list is attached so the human loop can start
+                     immediately (``kc ask-owner``)
+- ``human_review`` — hard conflicts or low confidence (verify manually)
 
-Recommendations are advisory only; nothing is landed by this agent.
+Recommendations are advisory only: a ``confirm`` is still just a
+suggestion — the actual decision happens in the human pipeline
+(``kc apply`` / ``kc ask-owner --confirm``), never in this agent.
 """
 
 from typing import Any
 
 from src.agents.base import Agent, register
+from src.agents.schemas import CANDIDATE_SCHEMA, REVIEW_ENTRY_SCHEMA, RISK_ENTRY_SCHEMA, array_of, object_with
 from src.evidence.confidence import is_sufficiently_evidenced
 
 RECOMMENDATIONS = ("confirm", "ask_owner", "human_review")
+CONFIRM_CONFIDENCE_THRESHOLD = 0.5
 
 
 @register
@@ -24,35 +32,18 @@ class ReviewAgent(Agent):
     name = "review"
     role = "Review assistance: diff summaries and recommendations for drafts"
 
-    input_schema = {
-        "type": "object",
-        "required": ["drafts", "risks"],
-        "properties": {
-            "drafts": {"type": "array"},
-            "risks": {"type": "array"},
+    input_schema = object_with(
+        properties={
+            "drafts": array_of(CANDIDATE_SCHEMA),
+            "risks": array_of(RISK_ENTRY_SCHEMA),
         },
-        "additionalProperties": True,
-    }
+        required=["drafts", "risks"],
+    )
 
-    output_schema = {
-        "type": "object",
-        "required": ["reviews"],
-        "properties": {
-            "reviews": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": ["id", "recommendation", "summary"],
-                    "properties": {
-                        "id": {"type": "string"},
-                        "recommendation": {"type": "string", "enum": list(RECOMMENDATIONS)},
-                        "summary": {"type": "string"},
-                        "reason": {"type": "string"},
-                    },
-                },
-            }
-        },
-    }
+    output_schema = object_with(
+        properties={"reviews": array_of(REVIEW_ENTRY_SCHEMA)},
+        required=["reviews"],
+    )
 
     def run(self, task: dict[str, Any]) -> dict[str, Any]:
         drafts = task["drafts"]
@@ -75,24 +66,26 @@ class ReviewAgent(Agent):
             elif not is_sufficiently_evidenced(evidence) or not draft.get("owner"):
                 recommendation = "ask_owner"
                 reason = ("warnings: " + "; ".join(warnings)) if warnings else "insufficient evidence or missing owner"
-            elif confidence is None or confidence < 0.5:
+            elif confidence is None or confidence < CONFIRM_CONFIDENCE_THRESHOLD:
                 recommendation = "human_review"
                 reason = f"confidence too low ({confidence})"
             else:
                 recommendation = "confirm"
                 reason = f"evidence={len(evidence)}, confidence={confidence}, no conflicts"
 
-            summary = (
-                f"[{draft.get('title', '')}] "
-                f"files={', '.join((draft.get('scope') or {}).get('files', []))}; "
-                f"evidence={len(evidence)}; confidence={confidence}"
-            )
-            reviews.append(
-                {
-                    "id": draft_id,
-                    "recommendation": recommendation,
-                    "summary": summary,
-                    "reason": reason,
-                }
-            )
+            entry: dict[str, Any] = {
+                "id": draft_id,
+                "recommendation": recommendation,
+                "summary": (
+                    f"[{draft.get('title', '')}] "
+                    f"files={', '.join((draft.get('scope') or {}).get('files', []))}; "
+                    f"evidence={len(evidence)}; confidence={confidence}"
+                ),
+                "reason": reason,
+            }
+            # Attach the draft's questions so the ask_owner loop can start
+            # directly from the run report.
+            if recommendation == "ask_owner":
+                entry["questions"] = draft.get("questions", [])
+            reviews.append(entry)
         return {"reviews": reviews}

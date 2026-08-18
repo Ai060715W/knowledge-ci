@@ -20,12 +20,19 @@ __all__ = ["AGENTS", "Agent", "describe_agents", "register"]
 class Agent:
     """Base class for pipeline agents.
 
-    Subclasses define ``name``, ``role``, ``input_schema``, and
-    ``output_schema`` and implement ``run(task)``.
+    Subclasses declare ``name``, ``role``, ``version``, ``effects``,
+    ``input_schema``, and ``output_schema`` and implement ``run(task)``.
+    ``effects`` states what an agent may write (reports/patches/none), so
+    the read-only/artifact boundary is part of the contract instead of a
+    convention.
     """
 
     name: ClassVar[str] = ""
     role: ClassVar[str] = ""
+    version: ClassVar[str] = "1.0.0"
+    #: What this agent is allowed to produce. v1 vocabulary:
+    #: "none" (pure), "artifacts:reports" (analysis writes reports+cache).
+    effects: ClassVar[list[str]] = ["none"]
     input_schema: ClassVar[dict[str, Any]] = {"type": "object"}
     output_schema: ClassVar[dict[str, Any]] = {"type": "object"}
 
@@ -39,10 +46,17 @@ class Agent:
 
     @classmethod
     def describe(cls) -> dict[str, Any]:
-        """The stable A2A contract of this agent (for reports and future runtimes)."""
+        """The stable A2A contract of this agent (for reports and future runtimes).
+
+        Includes the contract version and the declared write effects, so a
+        future A2A runtime can negotiate capabilities and sandbox agents by
+        their effects.
+        """
         return {
             "name": cls.name,
             "role": cls.role,
+            "version": cls.version,
+            "effects": list(cls.effects),
             "input_schema": cls.input_schema,
             "output_schema": cls.output_schema,
         }

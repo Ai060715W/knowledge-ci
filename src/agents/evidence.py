@@ -2,9 +2,11 @@ from __future__ import annotations
 
 """Evidence agent: aggregate traceable evidence and owner suggestions.
 
-Reads a discovery report (plan 2 output) and produces one evidence summary
-per candidate: item count, confidence, evidence ids, and the inferred owner
-(always a suggestion — ``owner_inferred`` stays true until a human confirms).
+Reads the discovery report and returns the **enriched candidate list** —
+each candidate keeps its full draft fields and gains a recomputed
+``confidence``, the aggregated ``evidence_ids``, and the owner suggestion
+(``owner_inferred`` stays true until a human confirms). Knowledge must
+consume this output, never the raw report, so enrichment is never bypassed.
 """
 
 import json
@@ -12,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from src.agents.base import Agent, register
+from src.agents.schemas import CANDIDATE_SCHEMA, array_of, object_with
 from src.evidence.confidence import compute_confidence
 
 
@@ -20,38 +23,20 @@ class EvidenceAgent(Agent):
     name = "evidence"
     role = "Evidence-chain aggregation: commit history, confidence, owner inference"
 
-    input_schema = {
-        "type": "object",
-        "required": ["discovery_report_path"],
-        "properties": {
+    input_schema = object_with(
+        properties={
             "discovery_report_path": {"type": "string", "minLength": 1},
             "settings": {"type": "object"},
         },
-        "additionalProperties": True,
-    }
+        required=["discovery_report_path"],
+    )
 
-    output_schema = {
-        "type": "object",
-        "required": ["enriched"],
-        "properties": {
-            "enriched": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": ["id", "evidence_count", "evidence_ids"],
-                    "properties": {
-                        "id": {"type": "string"},
-                        "module": {"type": "string"},
-                        "evidence_count": {"type": "integer"},
-                        "evidence_ids": {"type": "array", "items": {"type": "string"}},
-                        "confidence": {"type": ["number", "null"]},
-                        "owner": {"type": ["string", "null"]},
-                        "owner_inferred": {"type": "boolean"},
-                    },
-                },
-            }
+    output_schema = object_with(
+        properties={
+            "candidates": array_of(CANDIDATE_SCHEMA),
         },
-    }
+        required=["candidates"],
+    )
 
     def run(self, task: dict[str, Any]) -> dict[str, Any]:
         report_path = Path(task["discovery_report_path"])
@@ -61,17 +46,11 @@ class EvidenceAgent(Agent):
         enriched: list[dict[str, Any]] = []
         for candidate in report.get("candidates", []):
             evidence = candidate.get("evidence") or []
-            enriched.append(
-                {
-                    "id": candidate.get("id", ""),
-                    "module": (candidate.get("scope") or {}).get("files", [""])[0]
-                    if isinstance(candidate.get("scope"), dict)
-                    else "",
-                    "evidence_count": len(evidence),
-                    "evidence_ids": [item.get("id", "") for item in evidence],
-                    "confidence": compute_confidence(evidence, task.get("settings")),
-                    "owner": candidate.get("owner"),
-                    "owner_inferred": bool(candidate.get("owner_inferred")),
-                }
-            )
-        return {"enriched": enriched}
+            enriched_candidate = dict(candidate)
+            enriched_candidate["evidence_count"] = len(evidence)
+            enriched_candidate["evidence_ids"] = [item.get("id", "") for item in evidence]
+            enriched_candidate["confidence"] = compute_confidence(evidence, task.get("settings"))
+            enriched_candidate["owner"] = candidate.get("owner")
+            enriched_candidate["owner_inferred"] = bool(candidate.get("owner_inferred"))
+            enriched.append(enriched_candidate)
+        return {"candidates": enriched}
