@@ -57,6 +57,16 @@ freshness:              # 新鲜度四层判断 / 4-layer freshness pipeline
 owners:                 # 负责人推断 / owner inference
   codeowners_path: ""   # 留空自动探测 CODEOWNERS/.github/CODEOWNERS / empty = auto-detect
   infer_from_git_blame: true
+
+webhook:                # Push/MR 事件触发 / push/MR event triggers
+  secret: ""            # GitHub webhook secret（X-Hub-Signature-256）；空 = 服务器拒绝启动（除非 --insecure）/ empty = server refuses to start unless --insecure
+  bind_host: 127.0.0.1
+  bind_port: 8090
+  events:               # 每种事件自动执行的动作（只写 reports/patches，绝不落地）/ auto actions per event (write-only, never land)
+    push: [analyze, freshness, discover]
+    mr: [analyze, freshness, discover]
+  repos: {}             # "owner/repo": "本地检出路径" 多仓映射 / full name -> local checkout mapping
+  auto_patch: false     # freshness 动作是否自动生成 PENDING 补丁 / whether the freshness action may write PENDING patches
 ```
 
 程序内读取：`src/config.py` 的 `load_settings(config_path)` 会把这些段与默认值合并，
@@ -236,3 +246,35 @@ Migrate with `kc migrate --registry <path>` (dry-run, backup, and rollback suppo
 ```
 
 状态 / Status：`PENDING`（审核中，不进入注入）→ `APPLIED`（已落地）或 `REJECTED`（驳回，附 `status_reason`）。
+
+## 事件触发 / Event Triggers（Webhook）
+
+```powershell
+# 单仓模式 / single-repo mode
+kc webhook --repo C:\path\to\checkout --repo-name owner/repo --secret <github-secret>
+
+# 多仓模式（config 的 webhook.repos 映射）/ multi-repo mode (webhook.repos mapping)
+kc webhook --config .knowledge-ci\config.yaml
+```
+
+- 端点 / Endpoints：`POST /webhook/push`、`POST /webhook/mr`、`GET /health`。
+- v1 仅支持 GitHub 事件与 `X-Hub-Signature-256` 签名校验（恒定时间比较）；
+  其他平台通过 `src/webhook/server.py` 的 `parse_platform_event` 适配器接口扩展。
+- **安全默认 / secure default**：未配置 secret 且未显式 `--insecure` 时服务器拒绝启动。
+- **绝不自动落地 / never auto-lands**：事件只触发 analyze/freshness/discover 动作，
+  产物仅写入 `data/reports` 与 `data/patches`（`webhook.auto_patch` 开启时 freshness
+  产出 PENDING 补丁），registry 与知识文本不变。
+
+## 可观测性指标 / Observability Metrics
+
+`kc metrics` 输出 `data/metrics/metrics.json`，四个 KPI 均带公式、分子分母与口径说明：
+
+| 指标 / Metric | 公式 / Formula | 口径 / Notes |
+|:---|:---|:---|
+| `coverage` 覆盖率 | 有 active 知识的 Top-K 模块数 ÷ Top-K 模块数 | Top-K 来自最新 discovery 报告；按文件匹配 registry |
+| `freshness_rate` 新鲜度 | 锚点后无触及提交的 active 单元数 ÷ active 单元数 | 复用 freshness 第 1 层时间判定（`code_hash` → `last_verified` → 回退窗口） |
+| `hit_rate` 命中率 | `adopted=true` 的反馈记录数 ÷ 反馈记录总数 | 反馈端点接受 `adopted=true/false` 参数（用户自报） |
+| `confirmation_rate` 确认率 | APPLIED 补丁数 ÷ (APPLIED + REJECTED) | PENDING 不在分子分母；注册表状态分布作为上下文一并输出 |
+
+缺失输入（无 discovery 报告、无反馈记录、无已审核补丁）时对应指标为 `null` 并附说明，
+不编造数值。

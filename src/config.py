@@ -46,6 +46,17 @@ CONFIG_DEFAULTS: dict[str, Any] = {
         "codeowners_path": "",
         "infer_from_git_blame": True,
     },
+    "webhook": {
+        "secret": "",
+        "bind_host": "127.0.0.1",
+        "bind_port": 8090,
+        "events": {
+            "push": ["analyze", "freshness", "discover"],
+            "mr": ["analyze", "freshness", "discover"],
+        },
+        "repos": {},
+        "auto_patch": False,
+    },
 }
 
 

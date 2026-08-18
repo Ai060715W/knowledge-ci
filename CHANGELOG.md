@@ -44,6 +44,16 @@ All notable changes to this project will be documented in this file.
 - 35 new hermetic tests — 189 total, all passing.
 - Validated on `psf/requests` (@80683562) with handcrafted units: all four verdicts hit; a comment-only commit was correctly filtered by layer 2 (`ast_noise`); a real 2024-era adapters unit flowed through 15 commits to the LLM layer with per-commit AST evidence; `--apply` state transitions, PENDING patch generation, and the ask-owner hand-off were verified end-to-end.
 
+### Added (Plan 4: event triggers & observability metrics)
+
+- `src/webhook/`: stdlib `http.server` webhook server (`POST /webhook/push`, `POST /webhook/mr`, `GET /health`) with GitHub `X-Hub-Signature-256` verification (timing-safe; the CLI refuses to start without a secret unless `--insecure`), GitHub push/pull_request parsing behind a platform-adapter extension point, and an event pipeline that runs analyze/freshness/discover **write-only** — artifacts land in `data/reports`/`data/patches` and the registry is never modified.
+- `src/metrics/` + `kc metrics`: the four design-document KPIs with explicit formulas, numerators/denominators, and notes — `coverage` (Top-K modules with active knowledge), `freshness_rate` (reuses the layer-1 time anchor), `hit_rate` (feedback records with the new `adopted` flag), `confirmation_rate` (APPLIED / (APPLIED+REJECTED) patches, with registry status distribution for context); missing inputs degrade to `null` with a note, never a crash.
+- Feedback endpoint accepts `adopted=true/false`; `record_feedback` gains an `adopted` parameter.
+- Config: `webhook` section (secret, bind host/port, per-event actions, `repos` mapping, `auto_patch`).
+- Fix: Python files with a UTF-8 BOM (legal on disk, rejected by `ast.parse`) are now parsed correctly across discovery, signals, freshness, and impact analysis.
+- 30 new hermetic tests — 219 total, all passing.
+- Validated locally end-to-end: signed push events ran all three actions with the registry untouched (no auto-landing), bad signatures got 401, and all four KPIs computed from real demo artifacts.
+
 ## [0.1.0] - 2026-08-17
 
 Initial open-source release, generalized from the 4-week Knowledge CI POC.
