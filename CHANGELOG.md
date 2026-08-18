@@ -74,6 +74,11 @@ All notable changes to this project will be documented in this file.
 - Documented semantics: `confirm` is a recommendation, not a decision (decisions happen in `kc apply` / `kc ask-owner --confirm`); the 0.5 confirm threshold equals one mr or two commits of evidence strength.
 - 8 new/updated hermetic tests — 248 total, all passing.
 
+### Added (docs)
+
+- `docs/QUICKSTART.md` rewritten as a complete guided tutorial: a 10-minute free core loop (init → enter knowledge → inject → analyze → offline patch → review/apply), the automated discovery loop (discover → ask-owner questions/answer/confirm), the four-layer freshness walkthrough, the one-command A2A pipeline (`kc run`), webhook/metrics usage, an expanded FAQ, and a full command reference — covering every capability from plans 0-5 instead of only the original manual flow.
+- README gains a prominent tutorial banner for first-time users.
+
 ## [0.1.0] - 2026-08-17
 
 Initial open-source release, generalized from the 4-week Knowledge CI POC.

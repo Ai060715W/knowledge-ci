@@ -10,6 +10,9 @@ Code changes constantly, but docs and team knowledge lag behind. Knowledge CI tu
 maintenance into an engineering pipeline: commit → impact analysis → LLM-generated knowledge
 patch → human review → automatic injection before AI edits.
 
+> 📖 **第一次用？跟着教程走 10 分钟即可上手：见 [docs/QUICKSTART.md](docs/QUICKSTART.md)**
+> New here? Follow the 10-minute guided tutorial: [docs/QUICKSTART.md](docs/QUICKSTART.md)
+
 ```text
 git commit
     │
