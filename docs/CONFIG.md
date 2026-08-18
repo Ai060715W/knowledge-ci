@@ -291,16 +291,22 @@ kc run --repo C:\path\to\repo --registry .knowledge-ci\data\registry.json `
 
 | 阶段 / Stage | 角色 / Role |
 |:---|:---|
-| `analysis` | 依赖图 + Top-K 评分 + 异常结构（包装 `kc discover`） |
-| `evidence` | 证据链聚合：置信度、owner 推断（包装计划 2） |
-| `knowledge` | 生成 v2 知识草稿（`status: proposed`）+ 追问 |
-| `risk` | 风险分级（信号类型→HIGH/MEDIUM/LOW）+ 硬冲突（revert 证据、范围重叠）与软警告（无证据、无/推断 owner） |
-| `patch` | 草稿命中现有单元时物化为 **PENDING** 补丁提案（绝不自动落地） |
-| `review` | 审核辅助：`confirm` / `ask_owner`（证据不足或负责人缺失）/ `human_review`（冲突或低置信度）+ 差异摘要 |
-| `injection` | 对 Top 文件生成注入上下文预览（证明知识会到达开发者） |
+| `analysis` | 依赖图 + Top-K 评分 + 异常结构（包装 `kc discover`）；effects=`artifacts:reports`（写报告与缓存） |
+| `evidence` | 证据链聚合：输出**增强后的完整候选**（置信度重算、evidence_ids、owner 推断） |
+| `knowledge` | **只消费 evidence 的增强候选**（不再直接读报告）→ 生成 v2 知识草稿（`status: proposed`）+ 追问 |
+| `risk` | `signal_risk`（信号固有风险：桥接/循环依赖/回滚=HIGH，魔法数字/全局实例=MEDIUM，体积信号=LOW）与 `review_risk`（综合审核风险：硬冲突→HIGH；≥2 警告→HIGH；置信度<0.3→HIGH；否则=signal_risk）；硬冲突=revert 证据/范围重叠，软警告=无证据/无或推断 owner |
+| `patch` | 草稿命中现有单元时物化为 **PENDING** 补丁提案；**同单元只保留 review_risk 最高的一条**，其余记 deferred（防止并行补丁互相覆盖） |
+| `review` | 审核辅助：`confirm`（仅建议，人工决策在 `kc apply`/`kc ask-owner --confirm`）/ `ask_owner`（附该草稿的追问清单）/ `human_review` + 差异摘要；confirm 阈值 0.5 ≈ 一条 mr 或两条 commit 的证据强度 |
+| `injection` | 注入预览目标 = **registry 单元的 scope 文件（优先）∪ Top-K 模块路径**（去重、上限 10），无 registry 优雅降级为 unmatched |
 
-- **协议先行 / schema-first**：每个 Agent 在 `src/agents/` 下声明 `name/role/input_schema/output_schema`
-  （JSON Schema draft-07），编排器对每条消息做输入/输出校验；`AGENTS` 注册表是未来
-  分布式 A2A 运行时的发现入口（v1 不实现消息总线与分布式运行时）。
-- 单阶段失败只记录该阶段（`run_<ts>.json` 中 `pipeline[].status/error`），其余阶段继续执行。
-- 报告包含全链路产物：`drafts`、`risks`、`reviews`、`proposals`、`injection_previews`。
+- **协议先行 / schema-first**：每个 Agent 声明 `name/role/version/effects/input_schema/output_schema`
+  （JSON Schema draft-07，**全部 `additionalProperties: false` 严格契约**，共享 schema 在
+  `src/agents/schemas.py`），编排器对每条消息做输入/输出双重校验；`AGENTS` 注册表 +
+  `describe_agents()` 是未来分布式 A2A 运行时的发现入口（v1 不实现消息总线与分布式运行时）。
+- **数据依赖 = 声明顺序**：`analysis → evidence → knowledge → risk → patch → review → injection`，
+  knowledge 只消费 evidence 输出、risk/review 只消费 knowledge 输出、patch 消费 drafts+risks；
+  依赖缺失时下游标记 `skipped` 并写明原因。
+- **统一错误模型**：每个阶段失败带 `error_type ∈ {input_schema, output_schema, runtime, data}`
+  与结构化 `error`；单阶段失败不级联崩溃，其余阶段继续执行。
+- 报告包含全链路产物：`enriched`（增强候选）、`drafts`（同 `candidates` 别名，可直接交给
+  `kc ask-owner`）、`risks`、`reviews`、`proposals`、`injection_previews`。

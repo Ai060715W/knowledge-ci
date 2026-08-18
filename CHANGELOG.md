@@ -62,6 +62,18 @@ All notable changes to this project will be documented in this file.
 - 23 new hermetic tests — 242 total, all passing.
 - Validated on `psf/requests` (@80683562): one `kc run` command executed all seven stages (37 modules, 24 drafts, 47 questions, 24 reviews, 5 injection previews); with a registry configured, 3 PENDING patch proposals were materialized with valid Delta ops, and every review honestly recommended `human_review` for unconfirmed owners.
 
+### Fixed (A2A pipeline audit: data-loop hardening)
+
+- Evidence → knowledge data loop closed: the evidence agent now outputs the full enriched candidates (recomputed confidence, `evidence_ids`, owner inference) and the knowledge agent consumes only that output — never the raw discovery report; enriched candidates are persisted in the run report.
+- Strict interface contracts: shared JSON Schemas in `src/agents/schemas.py` (full per-field types for candidates, evidence items, risk/review entries, previews) with `additionalProperties: false` on every agent message; contracts now include `version` and `effects` (`analysis` declares `artifacts:reports`, all others `none`).
+- Unified failure model: every stage failure carries `error_type` (`input_schema` / `output_schema` / `runtime` / `data`) plus a structured error; a crashing agent is proven by test to be isolated (stage failed, downstream skipped, pipeline completes).
+- Risk semantics split: `signal_risk` (inherent structural risk) vs `review_risk` (conflicts → HIGH; ≥2 warnings → HIGH; confidence < 0.3 → HIGH; otherwise signal risk), so two drafts of the same signal kind can carry different review risk based on evidence quality; patch proposals now use `review_risk`.
+- Same-unit patch proposals deduplicated: per unit only the highest `review_risk` draft becomes a PENDING proposal, the rest are recorded as deferred — preventing parallel patches from silently overwriting each other; empty summaries are skipped.
+- Injection targets now equal the knowledge impact surface: registry unit scope files first, then Top-K module paths (deduplicated, capped at 10) — validated with a matched preview on the managed unit.
+- Review `ask_owner` entries carry the draft's question list, and the run report exposes a `candidates` alias so `kc ask-owner` can consume `kc run` reports directly (closing the human loop).
+- Documented semantics: `confirm` is a recommendation, not a decision (decisions happen in `kc apply` / `kc ask-owner --confirm`); the 0.5 confirm threshold equals one mr or two commits of evidence strength.
+- 8 new/updated hermetic tests — 248 total, all passing.
+
 ## [0.1.0] - 2026-08-17
 
 Initial open-source release, generalized from the 4-week Knowledge CI POC.
