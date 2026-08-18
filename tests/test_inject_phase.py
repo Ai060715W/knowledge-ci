@@ -296,6 +296,19 @@ class InjectContextTest(unittest.TestCase):
             self.assertEqual(parsed["source"], "web")
             self.assertIn("created_at", parsed)
 
+    def test_record_feedback_adopted_flag(self):
+        with tempfile.TemporaryDirectory() as temp:
+            feedback_path = Path(temp) / "feedback.jsonl"
+            without = record_feedback(feedback_path, "u", "f.py", "useful")
+            adopted = record_feedback(feedback_path, "u", "f.py", "useful", adopted=True)
+            declined = record_feedback(feedback_path, "u", "f.py", "useful", adopted=False)
+            lines = [json.loads(line) for line in feedback_path.read_text(encoding="utf-8").splitlines()]
+        self.assertNotIn("adopted", without)
+        self.assertEqual(lines[1]["adopted"], True)
+        self.assertEqual(lines[2]["adopted"], False)
+        self.assertEqual(adopted["adopted"], True)
+        self.assertEqual(declined["adopted"], False)
+
     def test_feedback_server_round_trip(self):
         from scripts.feedback_server import create_server
 

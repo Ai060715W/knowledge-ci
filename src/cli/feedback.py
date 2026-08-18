@@ -43,7 +43,9 @@ class FeedbackRequestHandler(BaseHTTPRequestHandler):
         if feedback not in {"useful", "improve"}:
             self._respond(400, "text/plain; charset=utf-8", "feedback 参数必须是 useful 或 improve。")
             return
-        record = record_feedback(self.server.feedback_file, unit_id, file_path, feedback)
+        adopted_raw = (params.get("adopted") or [""])[0].strip().lower()
+        adopted = adopted_raw in {"true", "1"} if adopted_raw else None
+        record = record_feedback(self.server.feedback_file, unit_id, file_path, feedback, adopted=adopted)
         body = (
             "<!doctype html><meta charset='utf-8'><title>Knowledge CI 反馈</title>"
             f"<body><h2>已记录反馈：{feedback}</h2>"

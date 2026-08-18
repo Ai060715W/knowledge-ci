@@ -320,8 +320,13 @@ def record_feedback(
     file_path: str,
     feedback: str,
     source: str = "web",
+    adopted: bool | None = None,
 ) -> dict[str, Any]:
-    """Append one feedback record to a JSON Lines log."""
+    """Append one feedback record to a JSON Lines log.
+
+    ``adopted`` marks whether the injected knowledge was actually used
+    (True/False) and feeds the hit-rate metric; None leaves it unreported.
+    """
     if feedback not in {"useful", "improve"}:
         raise ValueError("feedback must be 'useful' or 'improve'.")
     record = {
@@ -331,6 +336,8 @@ def record_feedback(
         "source": source,
         "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     }
+    if adopted is not None:
+        record["adopted"] = bool(adopted)
     path = Path(feedback_path)
     with _FEEDBACK_LOCK:
         path.parent.mkdir(parents=True, exist_ok=True)
