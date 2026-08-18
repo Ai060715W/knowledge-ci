@@ -278,3 +278,29 @@ kc webhook --config .knowledge-ci\config.yaml
 
 缺失输入（无 discovery 报告、无反馈记录、无已审核补丁）时对应指标为 `null` 并附说明，
 不编造数值。
+
+## A2A 多 Agent 流水线 / A2A Agent Pipeline
+
+`kc run` 一条命令跑通全链路（固定顺序、逐级 schema 校验、失败优雅降级、可 `--stop-after`）：
+
+```powershell
+kc run --repo C:\path\to\repo --top-k 10 --out reports
+kc run --repo C:\path\to\repo --registry .knowledge-ci\data\registry.json `
+       --patches .knowledge-ci\data\patches --stop-after review
+```
+
+| 阶段 / Stage | 角色 / Role |
+|:---|:---|
+| `analysis` | 依赖图 + Top-K 评分 + 异常结构（包装 `kc discover`） |
+| `evidence` | 证据链聚合：置信度、owner 推断（包装计划 2） |
+| `knowledge` | 生成 v2 知识草稿（`status: proposed`）+ 追问 |
+| `risk` | 风险分级（信号类型→HIGH/MEDIUM/LOW）+ 硬冲突（revert 证据、范围重叠）与软警告（无证据、无/推断 owner） |
+| `patch` | 草稿命中现有单元时物化为 **PENDING** 补丁提案（绝不自动落地） |
+| `review` | 审核辅助：`confirm` / `ask_owner`（证据不足或负责人缺失）/ `human_review`（冲突或低置信度）+ 差异摘要 |
+| `injection` | 对 Top 文件生成注入上下文预览（证明知识会到达开发者） |
+
+- **协议先行 / schema-first**：每个 Agent 在 `src/agents/` 下声明 `name/role/input_schema/output_schema`
+  （JSON Schema draft-07），编排器对每条消息做输入/输出校验；`AGENTS` 注册表是未来
+  分布式 A2A 运行时的发现入口（v1 不实现消息总线与分布式运行时）。
+- 单阶段失败只记录该阶段（`run_<ts>.json` 中 `pipeline[].status/error`），其余阶段继续执行。
+- 报告包含全链路产物：`drafts`、`risks`、`reviews`、`proposals`、`injection_previews`。

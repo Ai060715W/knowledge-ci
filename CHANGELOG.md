@@ -54,6 +54,14 @@ All notable changes to this project will be documented in this file.
 - 30 new hermetic tests — 219 total, all passing.
 - Validated locally end-to-end: signed push events ran all three actions with the registry untouched (no auto-landing), bad signatures got 401, and all four KPIs computed from real demo artifacts.
 
+### Added (Plan 5: A2A multi-agent collaboration)
+
+- `src/agents/`: schema-first A2A protocol (`Agent` base class: `name`/`role`/`input_schema`/`output_schema` with jsonschema validation, an `AGENTS` registry and `describe_agents()` contract dump for future runtimes) plus six agents — `analysis` (wraps discovery), `evidence` (evidence-chain aggregation, confidence, owner inference), `knowledge` (v2 unit drafts + owner questions), `risk` (signal-based risk grading; hard conflicts: revert evidence, scope overlaps; soft warnings: no evidence, missing/inferred owner), `review` (confirm / ask_owner / human_review recommendations with diff summaries), `injection` (context previews that prove what knowledge reaches a developer).
+- `src/agents/orchestrator.py` + `kc run`: sequential in-process orchestration (analysis → evidence → knowledge → risk → patch → review → injection) with per-message schema validation, graceful per-stage failure, `--stop-after`, PENDING patch-proposal materialization for drafts matching existing units (never auto-landed), and a full-chain `run_<ts>.json` report.
+- Injection agent degrades gracefully to unmatched previews when no registry exists (also auto-discovers `<repo>/.knowledge-ci/data/registry.json`).
+- 23 new hermetic tests — 242 total, all passing.
+- Validated on `psf/requests` (@80683562): one `kc run` command executed all seven stages (37 modules, 24 drafts, 47 questions, 24 reviews, 5 injection previews); with a registry configured, 3 PENDING patch proposals were materialized with valid Delta ops, and every review honestly recommended `human_review` for unconfirmed owners.
+
 ## [0.1.0] - 2026-08-17
 
 Initial open-source release, generalized from the 4-week Knowledge CI POC.

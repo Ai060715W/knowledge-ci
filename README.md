@@ -99,6 +99,7 @@ Run from your project directory (config is auto-discovered).
 | `python <kc>/scripts/freshness.py`（或 `kc freshness`）/ or `kc freshness` | 知识新鲜度四层判断（时间 → AST 语义 → 依赖影响 → LLM），只读默认，`--apply` 仅做安全状态流转 / 4-layer freshness check, read-only by default |
 | `python <kc>/scripts/webhook.py`（或 `kc webhook`）/ or `kc webhook` | Push/MR 事件触发：GitHub 签名校验 + 自动 analyze/freshness/discover，产物只进 reports/patches 绝不自动落地 / event triggers, write-only artifacts |
 | `python <kc>/scripts/metrics.py`（或 `kc metrics`）/ or `kc metrics` | 四大 KPI（覆盖率/新鲜度/命中率/确认率）+ 口径说明，输出 metrics.json / four KPIs with documented formulas |
+| `python <kc>/scripts/run.py`（或 `kc run`）/ or `kc run` | 一条命令跑通 A2A 流水线：discover → evidence → knowledge → risk → patch → review → inject（schema 校验、可 `--stop-after`）/ one-command A2A pipeline run |
 | `python <kc>/scripts/generate_patch.py --commit <c> --unit <id>`（或 `kc generate`）/ or `kc generate` | LLM 生成知识补丁 / generate a patch |
 | `python <kc>/scripts/apply_patch.py --patch <file>`（或 `kc apply`）/ or `kc apply` | 审核通过后落地补丁 / apply an approved patch |
 | `python <kc>/scripts/inject_context.py --file <path>`（或 `kc inject`）/ or `kc inject` | AI 编码前注入上下文 / inject context |
