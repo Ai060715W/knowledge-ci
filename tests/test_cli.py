@@ -13,6 +13,7 @@ from src.cli import (
     inject,
     metrics,
     migrate,
+    run,
     webhook,
 )
 from src.cli.main import COMMANDS, build_parser
@@ -36,6 +37,7 @@ class KcCliTest(unittest.TestCase):
                 "migrate",
                 "webhook",
                 "metrics",
+                "run",
             },
         )
 
@@ -96,6 +98,7 @@ class ModuleInterfaceTest(unittest.TestCase):
             migrate,
             webhook,
             metrics,
+            run,
         ):
             with self.subTest(module=module.__name__):
                 self.assertTrue(module.HELP)
