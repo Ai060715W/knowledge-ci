@@ -21,7 +21,9 @@ from src.cli import (
     generate,
     init,
     inject,
+    metrics,
     migrate,
+    webhook,
 )
 
 
@@ -37,6 +39,8 @@ COMMANDS: dict[str, Any] = {
     "feedback": feedback,
     "check-llm": check_llm,
     "migrate": migrate,
+    "webhook": webhook,
+    "metrics": metrics,
 }
 
 

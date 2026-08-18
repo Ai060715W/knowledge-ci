@@ -77,6 +77,18 @@ freshness:
 owners:
   codeowners_path: ""
   infer_from_git_blame: true
+
+# Event triggers: push/MR webhook server (see docs/CONFIG.md).
+# The server refuses to start without a secret (pass --secret or --insecure).
+webhook:
+  secret: ""
+  bind_host: 127.0.0.1
+  bind_port: 8090
+  events:
+    push: [analyze, freshness, discover]
+    mr: [analyze, freshness, discover]
+  repos: {{}}
+  auto_patch: false
 """
 
 EMPTY_REGISTRY = {

@@ -11,7 +11,9 @@ from src.cli import (
     generate,
     init,
     inject,
+    metrics,
     migrate,
+    webhook,
 )
 from src.cli.main import COMMANDS, build_parser
 
@@ -32,6 +34,8 @@ class KcCliTest(unittest.TestCase):
                 "feedback",
                 "check-llm",
                 "migrate",
+                "webhook",
+                "metrics",
             },
         )
 
@@ -68,6 +72,13 @@ class KcCliTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             build_parser().parse_args(["frobnicate"])
 
+    def test_init_template_renders_with_literal_braces(self):
+        # The webhook.repos default is a literal {} mapping; str.format must
+        # not mistake it for a placeholder (regression for init crashes).
+        rendered = init.CONFIG_TEMPLATE.format(model="gpt-4o-mini")
+        self.assertIn("repos: {}", rendered)
+        self.assertIn("gpt-4o-mini", rendered)
+
 
 class ModuleInterfaceTest(unittest.TestCase):
     def test_module_surface(self):
@@ -83,6 +94,8 @@ class ModuleInterfaceTest(unittest.TestCase):
             feedback,
             check_llm,
             migrate,
+            webhook,
+            metrics,
         ):
             with self.subTest(module=module.__name__):
                 self.assertTrue(module.HELP)
