@@ -149,7 +149,8 @@ def detect_signals(
         if module_id is None:
             continue  # unparsed file; the graph already reported it
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=str(path))
+            # utf-8-sig: BOM is legal on disk but ast.parse rejects it in a string.
+            tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="replace"), filename=str(path))
         except (SyntaxError, UnicodeError, OSError):
             continue
 

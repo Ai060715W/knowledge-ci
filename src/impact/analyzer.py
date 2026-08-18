@@ -44,7 +44,8 @@ def _unique_sorted(values: Iterable[str]) -> list[str]:
 def _decode_blob(blob: Any | None) -> str:
     if blob is None:
         return ""
-    return blob.data_stream.read().decode("utf-8", errors="replace")
+    # utf-8-sig strips a leading BOM that ast.parse would otherwise reject.
+    return blob.data_stream.read().decode("utf-8-sig", errors="replace")
 
 
 def _decode_patch(diff: Any) -> str:

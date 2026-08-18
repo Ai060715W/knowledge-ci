@@ -61,7 +61,8 @@ def _decode_blob(blob: Any | None) -> str:
     if blob is None:
         return ""
     try:
-        return blob.data_stream.read().decode("utf-8", errors="replace")
+        # utf-8-sig also strips a leading BOM that ast.parse would reject.
+        return blob.data_stream.read().decode("utf-8-sig", errors="replace")
     except Exception:
         return ""
 

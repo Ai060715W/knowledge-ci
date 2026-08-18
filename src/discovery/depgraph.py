@@ -257,7 +257,9 @@ def collect_python_files(repo_root: Path, exclude_paths: Iterable[str] | None = 
 
 def _parse_module(path: Path) -> ast.Module | None:
     try:
-        return ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=str(path))
+        # utf-8-sig strips a leading BOM, which the Python interpreter itself
+        # accepts but ast.parse(source_string) does not.
+        return ast.parse(path.read_text(encoding="utf-8-sig", errors="replace"), filename=str(path))
     except (SyntaxError, UnicodeError, OSError):
         return None
 

@@ -54,6 +54,16 @@ class DepGraphTest(unittest.TestCase):
         self.assertNotIn("broken", graph.nodes)
         self.assertTrue(any("broken.py" in error["path"] for error in graph.parse_errors))
 
+    def test_bom_encoded_file_is_parsed(self):
+        # A UTF-8 BOM is legal for the Python interpreter but ast.parse on a
+        # string rejects it; discovery must not skip such files.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "bom.py").write_text("X = 1\n", encoding="utf-8-sig")
+            graph = build_graph(root)
+        self.assertIn("bom", graph.nodes)
+        self.assertEqual(graph.parse_errors, [])
+
     def test_cycle_detection(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
