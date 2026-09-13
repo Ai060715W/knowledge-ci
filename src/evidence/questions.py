@@ -38,6 +38,10 @@ SIGNAL_LABELS: dict[str, tuple[str, str]] = {
     "long_class": ("超长类", "long class"),
     "dependency_cycle": ("循环依赖", "dependency cycle"),
     "reverted_history": ("频繁回滚历史", "reverted history"),
+    "exception_swallow": ("异常吞噬与静默降级", "swallowed exceptions / silent degradation"),
+    "special_cache": ("特殊缓存与状态同步", "hand-rolled cache / state synchronization"),
+    "redundant_branch": ("重复但不能合并的分支", "duplicated but unmergeable branches"),
+    "kept_logic": ("被反复保留的冗余逻辑", "kept / commented-out logic"),
 }
 
 #: Per-signal-kind questions, each as a (zh, en) pair.
@@ -68,6 +72,22 @@ QUESTION_TEMPLATES: dict[str, list[tuple[str, str]]] = {
     "reverted_history": [
         ("这里是否发生过线上事故或回滚？", "Did an incident or rollback happen here?"),
         ("当时回滚的原因是什么，现在是否仍然成立？", "Why was it reverted, and is that reason still valid?"),
+    ],
+    "exception_swallow": [
+        ("这里的异常为什么被吞掉或静默降级？", "Why is this exception swallowed or silently degraded?"),
+        ("吞掉之后会不会掩盖线上故障或数据错误？", "Could swallowing it hide production failures or data errors?"),
+    ],
+    "special_cache": [
+        ("这块缓存/状态为什么没有使用统一组件？", "Why is this cache/state hand-rolled instead of using a shared component?"),
+        ("它的失效策略与并发安全如何保证？", "What are its invalidation policy and concurrency guarantees?"),
+    ],
+    "redundant_branch": [
+        ("这些结构重复的分支为什么不能合并？", "Why can these structurally duplicated branches not be merged?"),
+        ("它们的行为差异在哪里，未来还会继续分叉吗？", "Where do they differ, and will they keep diverging?"),
+    ],
+    "kept_logic": [
+        ("这段被保留/注释掉的逻辑对应哪个历史场景？", "Which historical scenario does this kept/commented logic serve?"),
+        ("现在删除它会破坏什么？", "What would break if it were removed now?"),
     ],
 }
 

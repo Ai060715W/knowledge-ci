@@ -98,6 +98,130 @@ class SignalsTest(unittest.TestCase):
             signals = detect_signals(root, graph)
         self.assertEqual(signals["mod"], [])
 
+    def test_exception_swallow_variants(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            write_py(
+                root,
+                "mod.py",
+                "def f(x):\n"
+                "    try:\n"
+                "        return int(x)\n"
+                "    except ValueError:\n"
+                "        pass\n"
+                "    except TypeError:\n"
+                "        return {}\n"
+                "    except Exception:\n"
+                "        raise\n"
+                "    except:\n"
+                "        pass\n",
+            )
+            graph = build_graph(root)
+            signals = detect_signals(root, graph)
+        details = [s.detail for s in signals["mod"] if s.kind == "exception_swallow"]
+        self.assertTrue(any("ValueError" in d and "pass" in d for d in details))
+        self.assertTrue(any("TypeError" in d and "return default" in d for d in details))
+        self.assertTrue(any("bare except" in d for d in details))
+
+    def test_exception_re_raise_is_not_a_signal(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            write_py(root, "mod.py", "def f():\n    try:\n        x = 1\n    except ValueError:\n        raise\n")
+            graph = build_graph(root)
+            signals = detect_signals(root, graph)
+        self.assertFalse(any(s.kind == "exception_swallow" for s in signals["mod"]))
+
+    def test_special_cache_variants(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            write_py(
+                root,
+                "mod.py",
+                "import threading\n"
+                "_cache: dict = {}\n"
+                "_state = dict()\n"
+                "_lock: object = threading.Lock()\n"
+                "plain = 1\n",
+            )
+            graph = build_graph(root)
+            signals = detect_signals(root, graph)
+        details = [s.detail for s in signals["mod"] if s.kind == "special_cache"]
+        self.assertTrue(any("_cache" in d for d in details))
+        self.assertTrue(any("_state" in d for d in details))
+        self.assertTrue(any("_lock" in d and "Lock" in d for d in details))
+
+    def test_plain_module_constant_is_not_special_cache(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            write_py(root, "mod.py", "settings = {}\ncount = 0\n")
+            graph = build_graph(root)
+            signals = detect_signals(root, graph)
+        self.assertFalse(any(s.kind == "special_cache" for s in signals["mod"]))
+
+    def test_redundant_branch_detected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            write_py(
+                root,
+                "mod.py",
+                "def f(kind):\n"
+                "    if kind == 'a':\n"
+                "        return handle(kind)\n"
+                "    elif kind == 'b':\n"
+                "        return handle(kind)\n"
+                "    else:\n"
+                "        return None\n",
+            )
+            graph = build_graph(root)
+            signals = detect_signals(root, graph)
+        self.assertTrue(any(s.kind == "redundant_branch" for s in signals["mod"]))
+
+    def test_distinct_branches_are_not_redundant(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            write_py(
+                root,
+                "mod.py",
+                "def f(kind):\n"
+                "    if kind == 'a':\n"
+                "        return 1\n"
+                "    elif kind == 'b':\n"
+                "        return 2\n",
+            )
+            graph = build_graph(root)
+            signals = detect_signals(root, graph)
+        self.assertFalse(any(s.kind == "redundant_branch" for s in signals["mod"]))
+
+    def test_kept_logic_variants(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            write_py(
+                root,
+                "mod.py",
+                "def f():\n"
+                "    return 1\n"
+                "# def old_f():\n"
+                "#     return run_legacy()\n"
+                "#     result = send_report()\n"
+                "# 勿删：这段是历史原因保留的兼容逻辑\n"
+                "# TODO: remove only after legacy clients retire\n"
+                "X = 1\n",
+            )
+            graph = build_graph(root)
+            signals = detect_signals(root, graph)
+        details = [s.detail for s in signals["mod"] if s.kind == "kept_logic"]
+        self.assertTrue(any("commented-out code block" in d for d in details))
+        self.assertTrue(any("勿删" in d for d in details))
+        self.assertTrue(any("todo" in d for d in details))
+
+    def test_plain_comments_are_not_kept_logic(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            write_py(root, "mod.py", "# a normal comment\n# another one\nX = 1\n")
+            graph = build_graph(root)
+            signals = detect_signals(root, graph)
+        self.assertFalse(any(s.kind == "kept_logic" for s in signals["mod"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -33,6 +33,10 @@ _SIGNAL_RISK: dict[str, str] = {
     "long_class": "LOW",
     "dependency_cycle": "HIGH",
     "reverted_history": "HIGH",
+    "exception_swallow": "HIGH",
+    "special_cache": "HIGH",
+    "redundant_branch": "MEDIUM",
+    "kept_logic": "MEDIUM",
 }
 
 DEFAULT_SIGNAL_RISK = "MEDIUM"

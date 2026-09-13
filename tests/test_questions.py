@@ -52,6 +52,16 @@ class QuestionsTest(unittest.TestCase):
         questions = build_candidate_questions("unknown_kind", evidence=None)
         self.assertEqual(len(questions), len(INSUFFICIENCY_QUESTIONS))
 
+    def test_behavior_signal_kinds_have_two_bilingual_questions(self):
+        for kind in ("exception_swallow", "special_cache", "redundant_branch", "kept_logic"):
+            with self.subTest(kind=kind):
+                questions = build_candidate_questions(
+                    kind,
+                    evidence=[{"type": "commit", "id": "a"}, {"type": "incident", "id": "b"}],
+                )
+                self.assertEqual(len(questions), 2)
+                self.assertTrue(all(item["zh"] and item["en"] for item in questions))
+
     def test_generate_questions_entry_shape(self):
         entries = generate_questions([make_candidate()])
         self.assertEqual(entries[0]["candidate_id"], "cand_mod_001")

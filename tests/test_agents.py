@@ -164,11 +164,19 @@ class RiskAgentTest(unittest.TestCase):
                 make_candidate(id="a", signal_kind="dependency_cycle"),
                 make_candidate(id="b", signal_kind="long_function"),
                 make_candidate(id="c", signal_kind="unknown"),
+                make_candidate(id="swallow", signal_kind="exception_swallow"),
+                make_candidate(id="cache", signal_kind="special_cache"),
+                make_candidate(id="branch", signal_kind="redundant_branch"),
+                make_candidate(id="kept", signal_kind="kept_logic"),
             ]
         )
         self.assertEqual(risks["a"]["signal_risk"], "HIGH")
         self.assertEqual(risks["b"]["signal_risk"], "LOW")
         self.assertEqual(risks["c"]["signal_risk"], "MEDIUM")
+        self.assertEqual(risks["swallow"]["signal_risk"], "HIGH")
+        self.assertEqual(risks["cache"]["signal_risk"], "HIGH")
+        self.assertEqual(risks["branch"]["signal_risk"], "MEDIUM")
+        self.assertEqual(risks["kept"]["signal_risk"], "MEDIUM")
 
     def test_review_risk_reflects_evidence_quality(self):
         # Same signal kind, very different evidence quality -> different

@@ -43,6 +43,39 @@ COMMON_SAFE_NUMBERS: frozenset[int] = frozenset({0, 1, 2, -1})
 #: Default line-span threshold for "long function/class" signals.
 DEFAULT_LONG_SPAN_LINES = 80
 
+#: Module-level names hinting at hand-rolled mutable state containers.
+CACHE_NAME_PATTERN = re.compile(r"(cache|state|registry|pool|buffer|store)", re.IGNORECASE)
+
+#: Synchronization primitive class names (threading/its aliases).
+SYNC_PRIMITIVES = frozenset(
+    {"Lock", "RLock", "Semaphore", "BoundedSemaphore", "Condition", "Event"}
+)
+
+#: Comment markers suggesting deliberately kept logic.
+KEEP_MARKERS = (
+    "todo",
+    "勿删",
+    "不要删",
+    "历史原因",
+    "兼容旧版",
+    "暂时保留",
+    "保留勿动",
+    "hack",
+    "workaround",
+)
+
+#: Statement prefixes used to recognize a commented-out Python code block.
+#: The expression is intentionally conservative: prose comments should not
+#: become knowledge candidates merely because they span several lines.
+_COMMENTED_CODE_RE = re.compile(
+    r"(?:async\s+def\s+|def\s+|class\s+|import\s+|from\s+|return\b|raise\b|"
+    r"if\s+|elif\s+|else:|for\s+|while\s+|try:|except\b|with\s+|"
+    r"[A-Za-z_]\w*\s*(?:=|\())"
+)
+
+#: Minimum consecutive code-like comment lines to count as a kept block.
+COMMENTED_BLOCK_MIN_LINES = 3
+
 #: Signal kinds emitted by this module.
 signal_kinds = (
     "magic_number",
@@ -52,6 +85,10 @@ signal_kinds = (
     "long_class",
     "dependency_cycle",
     "reverted_history",
+    "exception_swallow",
+    "special_cache",
+    "redundant_branch",
+    "kept_logic",
 )
 
 
@@ -128,6 +165,176 @@ def _long_spans(tree: ast.Module, threshold: int) -> list[Signal]:
     return signals
 
 
+# ---------------------------------------------------------------------------
+# Behavior anomaly detectors (design document: "行为异常信号")
+# ---------------------------------------------------------------------------
+
+
+def _exception_swallows(tree: ast.Module) -> list[tuple[str, int]]:
+    """Bare excepts, ``except: pass``, and except-return-default degradation.
+
+    These hide failures from callers and are classic "this looks wrong but is
+    deliberate" knowledge candidates.
+    """
+    found: list[tuple[str, int]] = []
+    for handler in ast.walk(tree):
+        if not isinstance(handler, ast.ExceptHandler):
+            continue
+        if handler.type is None:
+            found.append(("bare except swallows every exception", handler.lineno))
+            continue
+        body = handler.body
+        if len(body) == 1:
+            statement = body[0]
+            if isinstance(statement, ast.Pass):
+                found.append(
+                    (f"except {ast.unparse(handler.type)}: pass (exception swallowed)", handler.lineno)
+                )
+            elif isinstance(statement, ast.Return) and _is_default_return(statement.value):
+                found.append(
+                    (
+                        f"except {ast.unparse(handler.type)}: return default "
+                        f"(silent degradation)",
+                        handler.lineno,
+                    )
+                )
+    return found
+
+
+def _is_default_return(value: ast.expr | None) -> bool:
+    """Whether a return expression is a conventional local fallback value."""
+    return value is None or isinstance(value, (ast.Constant, ast.Dict, ast.List, ast.Set, ast.Tuple))
+
+
+def _assignment_target_and_value(node: ast.stmt) -> tuple[list[ast.expr], ast.expr] | None:
+    """Return module-level assignment targets and value, including annotations."""
+    if isinstance(node, ast.Assign):
+        return node.targets, node.value
+    if isinstance(node, ast.AnnAssign) and node.value is not None:
+        return [node.target], node.value
+    return None
+
+
+def _called_name(call: ast.Call) -> str | None:
+    """Final callee name for a simple or qualified call."""
+    if isinstance(call.func, ast.Name):
+        return call.func.id
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
+    return None
+
+
+def _is_mutable_container(value: ast.expr) -> bool:
+    """Recognize literal and common constructor forms of mutable containers."""
+    if isinstance(value, (ast.Dict, ast.List, ast.Set)):
+        return True
+    return isinstance(value, ast.Call) and _called_name(value) in {"dict", "list", "set", "defaultdict"}
+
+
+def _special_caches(tree: ast.Module) -> list[tuple[str, int]]:
+    """Module-level mutable state containers and hand-rolled sync primitives.
+
+    A module-level dict/list/set whose name suggests cache/state/pool/store,
+    or a module-level threading lock, is a strong "why not the shared
+    component?" knowledge candidate.
+    """
+    found: list[tuple[str, int]] = []
+    for node in tree.body:
+        assignment = _assignment_target_and_value(node)
+        if assignment is None:
+            continue
+        targets, value = assignment
+        for target in targets:
+            if not isinstance(target, ast.Name):
+                continue
+            if _is_mutable_container(value) and CACHE_NAME_PATTERN.search(target.id):
+                found.append((f"module-level mutable state container: {target.id}", node.lineno))
+            elif isinstance(value, ast.Call):
+                called = _called_name(value)
+                if called in SYNC_PRIMITIVES:
+                    found.append(
+                        (f"hand-rolled synchronization primitive: {target.id} = {called}()", node.lineno)
+                    )
+    return found
+
+
+def _body_signature(body: list[ast.stmt]) -> str:
+    """Normalized structural signature of a statement list (docstring stripped)."""
+    cleaned: list[ast.stmt] = []
+    for statement in body:
+        if not cleaned and isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant) and isinstance(
+            statement.value.value, str
+        ):
+            continue
+        cleaned.append(statement)
+    return ast.dump(ast.Module(body=cleaned, type_ignores=[]), include_attributes=False)
+
+
+def _redundant_branches(tree: ast.Module) -> list[tuple[str, int]]:
+    """Structurally identical branch bodies inside one if/elif chain.
+
+    Duplicate bodies with different conditions are usually "cannot merge"
+    logic whose reason only humans know.
+    """
+    found: list[tuple[str, int]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        chain: list[tuple[str, str]] = [(ast.unparse(node.test), _body_signature(node.body))]
+        current = node
+        while current.orelse and len(current.orelse) == 1 and isinstance(current.orelse[0], ast.If):
+            child = current.orelse[0]
+            chain.append((ast.unparse(child.test), _body_signature(child.body)))
+            current = child
+        seen: dict[str, str] = {}
+        for condition, signature in chain:
+            previous = seen.get(signature)
+            if previous is not None and previous != condition:
+                found.append(
+                    (f"branch body duplicates the '{previous}' branch (cannot be merged?)", node.lineno)
+                )
+            else:
+                seen.setdefault(signature, condition)
+    return found
+
+
+def _kept_logic(source_lines: list[str]) -> list[tuple[str, int]]:
+    """Commented-out code blocks and explicit keep markers.
+
+    "Seemingly redundant but repeatedly preserved" logic: large commented-out
+    code blocks, or comments saying the code must stay for a reason.
+    """
+    found: list[tuple[str, int]] = []
+
+    run: list[str] = []
+    run_start = 0
+    for index, line in enumerate(source_lines, start=1):
+        comment = re.match(r"^\s*#\s*(.*)$", line)
+        if comment and _COMMENTED_CODE_RE.match(comment.group(1)):
+            if not run:
+                run_start = index
+            run.append(comment.group(1))
+        else:
+            if len(run) >= COMMENTED_BLOCK_MIN_LINES:
+                found.append(
+                    (f"commented-out code block ({len(run)} lines) kept in place", run_start)
+                )
+            run = []
+    if len(run) >= COMMENTED_BLOCK_MIN_LINES:
+        found.append((f"commented-out code block ({len(run)} lines) kept in place", run_start))
+
+    for index, line in enumerate(source_lines, start=1):
+        comment = re.match(r"^\s*#\s*(.*)$", line)
+        if not comment:
+            continue
+        lowered = comment.group(1).lower()
+        for marker in KEEP_MARKERS:
+            if marker.lower() in lowered:
+                found.append((f"keep marker '{marker}' found", index))
+                break
+    return found
+
+
 def detect_signals(
     repo_root: str | Path,
     graph: ModuleGraph,
@@ -150,16 +357,18 @@ def detect_signals(
             continue  # unparsed file; the graph already reported it
         try:
             # utf-8-sig: BOM is legal on disk but ast.parse rejects it in a string.
-            tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="replace"), filename=str(path))
+            source = path.read_text(encoding="utf-8-sig", errors="replace")
+            tree = ast.parse(source, filename=str(path))
         except (SyntaxError, UnicodeError, OSError):
             continue
 
         module_signals = signals[module_id]
+        relative_path = path.relative_to(root).as_posix()
         for value, lineno in _condition_numbers(tree):
             module_signals.append(
                 Signal(
                     kind="magic_number",
-                    path=path.relative_to(root).as_posix(),
+                    path=relative_path,
                     detail=f"magic number {value} used in a condition",
                     line=lineno,
                 )
@@ -168,14 +377,30 @@ def detect_signals(
             module_signals.append(
                 Signal(
                     kind="global_instance",
-                    path=path.relative_to(root).as_posix(),
+                    path=relative_path,
                     detail=detail,
                     line=lineno,
                 )
             )
         for signal in _long_spans(tree, long_span_lines):
-            signal.path = path.relative_to(root).as_posix()
+            signal.path = relative_path
             module_signals.append(signal)
+        for detail, lineno in _exception_swallows(tree):
+            module_signals.append(
+                Signal(kind="exception_swallow", path=relative_path, detail=detail, line=lineno)
+            )
+        for detail, lineno in _special_caches(tree):
+            module_signals.append(
+                Signal(kind="special_cache", path=relative_path, detail=detail, line=lineno)
+            )
+        for detail, lineno in _redundant_branches(tree):
+            module_signals.append(
+                Signal(kind="redundant_branch", path=relative_path, detail=detail, line=lineno)
+            )
+        for detail, lineno in _kept_logic(source.splitlines()):
+            module_signals.append(
+                Signal(kind="kept_logic", path=relative_path, detail=detail, line=lineno)
+            )
 
         basename = path.stem
         docstring = ast.get_docstring(tree) or ""
@@ -185,7 +410,7 @@ def detect_signals(
             module_signals.append(
                 Signal(
                     kind="bridge_compat",
-                    path=path.relative_to(root).as_posix(),
+                    path=relative_path,
                     detail=f"compatibility/bridge layer hint (name or docstring)",
                     line=1,
                 )
