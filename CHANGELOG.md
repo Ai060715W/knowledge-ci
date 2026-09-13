@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added (Phase 2, Plan A: behavior anomaly signals)
+
+- `src/discovery/signals.py`: four explainable behavior-anomaly detectors — `exception_swallow` (bare/ignored exceptions and local fallback returns), `special_cache` (module-level cache/state containers and synchronization primitives), `redundant_branch` (identical bodies in an `if`/`elif` chain), and `kept_logic` (commented-out code blocks plus TODO/keep/history markers).
+- `src/evidence/questions.py`: two bilingual owner questions for each new signal kind; `src/agents/risk.py`: HIGH risk for exception swallowing and special caches, MEDIUM for redundant branches and kept logic.
+- Offline regression coverage for positive and negative behavior-signal cases, annotated assignments, mutable constructors, default collection fallbacks, bilingual question templates, and risk mappings. Validated against the local `psf/requests` checkout (37 modules): `exception_swallow` 20, `special_cache` 0, `redundant_branch` 5, `kept_logic` 8 (33 new signals total; special-cache absence is expected for that repository).
+
 ### Added (Plan 0: engineering & schema foundation)
 
 - `pyproject.toml` with the unified `kc` CLI (`kc init/analyze/generate/apply/inject/feedback/check-llm/migrate`); legacy `scripts/*.py` entry points remain compatible wrappers.

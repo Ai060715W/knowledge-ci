@@ -74,6 +74,19 @@ webhook:                # Push/MR 事件触发 / push/MR event triggers
 In code: `load_settings(config_path)` in `src/config.py` merges these sections with
 the defaults above, so omitted sections still resolve to the documented values.
 
+## 发现信号清单 / Discovery Signal Catalog
+
+`kc discover` 检测 11 类信号（全部规则化、可解释，`src/discovery/signals.py`）：
+
+| 类别 / Category | 信号 / Signal | 风险 / Signal risk |
+|:---|:---|:---|
+| 结构信号 / structural | `magic_number` 魔法数字/硬编码阈值、`global_instance` 模块级全局实例、`bridge_compat` 兼容/桥接层、`long_function`/`long_class` 超长函数/类、`dependency_cycle` 循环依赖 | MEDIUM / MEDIUM / HIGH / LOW / HIGH |
+| 历史信号 / historical | `reverted_history` 频繁回滚历史 | HIGH |
+| 行为信号 / behavioral | `exception_swallow` 异常吞噬与静默降级（裸 except、`except: pass`、except 返回默认值）、`special_cache` 特殊缓存与状态同步（模块级 cache/state/pool 容器、手写锁）、`redundant_branch` 同一 if 链内结构重复的分支体、`kept_logic` 被保留的冗余逻辑（≥3 行成段注释掉的代码、TODO/勿删/历史原因/兼容标记） | HIGH / HIGH / MEDIUM / MEDIUM |
+
+行为信号是设计文档"行为异常信号"的落地：它们指向"难看实现其实是设计决策"的最强线索，
+发现出的候选照例只生成 `proposed` 草稿与追问，绝不直接入库。
+
 ## 证据链与追问 / Evidence Chain & Owner Questions
 
 `kc discover` 的候选自带证据链（commit 级、可回溯 hash）与置信度；
