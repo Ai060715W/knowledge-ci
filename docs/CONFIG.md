@@ -64,9 +64,11 @@ webhook:                # Push/MR 事件触发 / push/MR event triggers
   bind_port: 8090
   events:               # 每种事件自动执行的动作（只写 reports/patches，绝不落地）/ auto actions per event (write-only, never land)
     push: [analyze, freshness, discover]
-    mr: [analyze, freshness, discover]
+    mr: [analyze, freshness, discover, comment]
   repos: {}             # "owner/repo": "本地检出路径" 多仓映射 / full name -> local checkout mapping
   auto_patch: false     # freshness 动作是否自动生成 PENDING 补丁 / whether the freshness action may write PENDING patches
+  comment_dry_run: true # true = 仅写本地 MR 评论草稿；false + GITHUB_TOKEN = gh pr comment 发布 / local draft only unless false + token
+  preview_base_url: "http://localhost:8080/" # PENDING 补丁预览器地址 / PENDING patch preview base URL
 ```
 
 程序内读取：`src/config.py` 的 `load_settings(config_path)` 会把这些段与默认值合并，
@@ -274,7 +276,15 @@ kc webhook --config .knowledge-ci\config.yaml
 - v1 仅支持 GitHub 事件与 `X-Hub-Signature-256` 签名校验（恒定时间比较）；
   其他平台通过 `src/webhook/server.py` 的 `parse_platform_event` 适配器接口扩展。
 - **安全默认 / secure default**：未配置 secret 且未显式 `--insecure` 时服务器拒绝启动。
-- **绝不自动落地 / never auto-lands**：事件只触发 analyze/freshness/discover 动作，
+- **动作 / actions**：`analyze` 写影响报告，`freshness` 写新鲜度报告，`discover` 写发现报告，
+  `comment` 仅用于 MR/PR：汇总影响单元、新鲜度结论与 PENDING 补丁预览链接，写入
+  `data/reports/mr_comment_<ts>.md`。
+- **PR 评论发布 / PR comment publishing**：`webhook.comment_dry_run: true`（默认）时永不出网；
+  设置为 `false` 且环境变量 `GITHUB_TOKEN` 存在时，`comment` 动作会调用
+  `gh pr comment <number> --body-file <local-comment>` 发布。未配置 token 时优雅降级为本地评论文件。
+- **补丁预览 / patch previews**：`webhook.preview_base_url` 用于生成 Quill 预览器链接；若本次 freshness
+  没有产生 PENDING 补丁，评论中的预览表会显示 `none`。
+- **绝不自动落地 / never auto-lands**：事件只触发 analyze/freshness/discover/comment 动作，
   产物仅写入 `data/reports` 与 `data/patches`（`webhook.auto_patch` 开启时 freshness
   产出 PENDING 补丁），registry 与知识文本不变。
 

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added (Phase 2, Plan B: MR bot — automatic MR/PR comments)
+
+- `src/webhook/pipeline.py`: new `comment` action for MR events (`mr` defaults to `[analyze, freshness, discover, comment]`). Prior action reports flow through a shared per-event context; the comment assembles an impacted knowledge-unit table (unit ↔ changed files ↔ changed symbols), per-unit freshness conclusions (verdict, basis, layers, actions), and a PENDING patch preview table (`none` when the run wrote no patches).
+- `src/patch/pr_manager.py`: `write_local_pr_comment()` always lands the comment at `reports/mr_comment_<ts>.md` first (auditable); `post_pr_comment()` publishes through `gh pr comment` only when `webhook.comment_dry_run: false` **and** `GITHUB_TOKEN` is set. Missing token, missing `gh` binary, or a failed `gh` call all degrade to "local file + explanation" — the webhook never crashes on publication problems and never touches the network in dry-run mode.
+- Config: `webhook.comment_dry_run` (default `true`) and `webhook.preview_base_url` (default `http://localhost:8080/`); `kc init` template and `docs/CONFIG.md` updated; an explicitly configured `events.mr` list keeps the user's choice (comment is only in defaults).
+- Hermetic tests: comment body assembly (impact + freshness + patch preview), end-to-end local comment on a real git fixture, dry-run never invokes `subprocess`, and no-token / missing-`gh` / failed-`gh` degradation paths — 263 total, all passing.
+- Validated end-to-end on `_validation/webhook_demo`: a simulated `pull_request` event (head `de11d92`, touching `src/payment.py`) ran analyze → freshness → discover → comment and wrote `mr_comment_<ts>.md` naming unit `payment_retry` with symbols `MAX_RETRY, RETRY_BACKOFF_S, next_backoff`, a `needs_llm` verdict (no API key, graceful), and a `none` preview table (no PENDING patches without LLM); the registry was verified untouched (no auto-landing) and `published: false` with a dry-run detail.
+- End-to-end with a real `GITHUB_TOKEN` + `gh` remains an optional manual check (documented in `docs/CONFIG.md`).
+
 ### Added (Phase 2, Plan A: behavior anomaly signals)
 
 - `src/discovery/signals.py`: four explainable behavior-anomaly detectors — `exception_swallow` (bare/ignored exceptions and local fallback returns), `special_cache` (module-level cache/state containers and synchronization primitives), `redundant_branch` (identical bodies in an `if`/`elif` chain), and `kept_logic` (commented-out code blocks plus TODO/keep/history markers).
