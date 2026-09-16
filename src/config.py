@@ -52,10 +52,12 @@ CONFIG_DEFAULTS: dict[str, Any] = {
         "bind_port": 8090,
         "events": {
             "push": ["analyze", "freshness", "discover"],
-            "mr": ["analyze", "freshness", "discover"],
+            "mr": ["analyze", "freshness", "discover", "comment"],
         },
         "repos": {},
         "auto_patch": False,
+        "comment_dry_run": True,
+        "preview_base_url": "http://localhost:8080/",
     },
 }
 

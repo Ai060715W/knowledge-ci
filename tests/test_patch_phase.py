@@ -1,11 +1,20 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from src.patch.delta import DeltaValidationError, apply_delta_ops, validate_delta_ops
 from src.patch.generator import build_patch, parse_model_delta
-from src.patch.pr_manager import apply_patch_to_registry, build_pr_body, create_pr, discover_codeowners, mark_patch_status
+from src.patch.pr_manager import (
+    apply_patch_to_registry,
+    build_pr_body,
+    create_pr,
+    discover_codeowners,
+    mark_patch_status,
+    post_pr_comment,
+)
 from src.patch.prompts import build_prompt
 
 
@@ -148,6 +157,61 @@ class PatchPhaseTest(unittest.TestCase):
         self.assertIn("Knowledge Patch", body)
         self.assertEqual(pr["branch"], "knowledge-patch/kp_20260704_001")
         self.assertTrue(pr["dry_run"])
+
+    def test_post_pr_comment_dry_run_writes_local_file_without_gh(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with mock.patch("src.patch.pr_manager.subprocess.run") as run:
+                result = post_pr_comment(root, 7, "hello from Knowledge CI", root / "reports", dry_run=True)
+            comment_files = list((root / "reports").glob("mr_comment_*.md"))
+
+        self.assertFalse(run.called)
+        self.assertFalse(result["published"])
+        self.assertEqual(len(comment_files), 1)
+        self.assertIn("mr_comment_", Path(result["local_path"]).name)
+
+    def test_post_pr_comment_without_token_degrades_to_local_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with mock.patch.dict("os.environ", {"GITHUB_TOKEN": ""}):
+                with mock.patch("src.patch.pr_manager.subprocess.run") as run:
+                    result = post_pr_comment(root, 7, "body", root / "reports", dry_run=False)
+
+        self.assertFalse(run.called)
+        self.assertFalse(result["published"])
+        self.assertIn("GITHUB_TOKEN is not set", result["detail"])
+
+    def test_post_pr_comment_without_gh_binary_degrades_to_local_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with mock.patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}):
+                with mock.patch(
+                    "src.patch.pr_manager.subprocess.run", side_effect=FileNotFoundError("gh")
+                ):
+                    result = post_pr_comment(root, 7, "body", root / "reports", dry_run=False)
+            comment_files = list((root / "reports").glob("mr_comment_*.md"))
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["published"])
+        self.assertEqual(len(comment_files), 1)
+        self.assertIn("`gh` CLI not found", result["detail"])
+
+    def test_post_pr_comment_gh_failure_keeps_local_file_and_reason(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with mock.patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}):
+                with mock.patch(
+                    "src.patch.pr_manager.subprocess.run",
+                    side_effect=subprocess.CalledProcessError(1, ["gh"], stderr="gh: not logged in\n"),
+                ):
+                    result = post_pr_comment(root, 7, "body", root / "reports", dry_run=False)
+            comment_files = list((root / "reports").glob("mr_comment_*.md"))
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["published"])
+        self.assertEqual(len(comment_files), 1)
+        self.assertIn("gh pr comment failed", result["detail"])
+        self.assertIn("not logged in", result["detail"])
 
     def test_codeowners_and_rejected_patch_status(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -5,7 +5,7 @@ from fnmatch import fnmatch
 import json
 import os
 import subprocess
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +88,66 @@ def build_pr_body(patch: dict[str, Any], base_url: str = "http://localhost:8080/
 
 {preview_url(patch, base_url)}
 """
+
+
+def write_local_pr_comment(body: str, reports_path: str | Path, timestamp: str | None = None) -> Path:
+    output_dir = Path(reports_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stamp = timestamp or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    output_path = output_dir / f"mr_comment_{stamp}.md"
+    output_path.write_text(body.rstrip() + "\n", encoding="utf-8")
+    return output_path
+
+
+def post_pr_comment(
+    repo_path: str | Path,
+    pr_number: int | str,
+    body: str,
+    reports_path: str | Path,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Write a PR comment locally and optionally publish it through GitHub CLI.
+
+    The local file is always written first so webhook runs remain auditable.
+    Network publication is opt-in via ``dry_run=False`` and requires
+    ``GITHUB_TOKEN``; otherwise the function degrades to the local artifact.
+    """
+    output_path = write_local_pr_comment(body, reports_path)
+    result: dict[str, Any] = {
+        "ok": True,
+        "dry_run": dry_run,
+        "local_path": str(output_path),
+        "published": False,
+    }
+    if dry_run:
+        result["detail"] = f"dry-run: local MR comment written to {output_path.name}"
+        return result
+    if not os.environ.get("GITHUB_TOKEN"):
+        result["detail"] = f"GITHUB_TOKEN is not set; local MR comment written to {output_path.name}"
+        return result
+
+    # Publishing is best-effort: a missing `gh` CLI or a failed call must not
+    # crash the webhook — the local artifact is already written, so degrade to
+    # "local file + explanation" exactly like the no-token path above.
+    try:
+        subprocess.run(
+            ["gh", "pr", "comment", str(pr_number), "--body-file", str(output_path)],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        result["detail"] = f"`gh` CLI not found; local MR comment written to {output_path.name}"
+        return result
+    except subprocess.CalledProcessError as error:
+        stderr = (error.stderr or "").strip().splitlines()
+        reason = stderr[-1] if stderr else str(error)
+        result["detail"] = f"gh pr comment failed ({reason}); local MR comment written to {output_path.name}"
+        return result
+    result["published"] = True
+    result["detail"] = f"published PR comment from {output_path.name}"
+    return result
 
 
 def discover_codeowners(repo_path: str | Path, paths: list[str]) -> list[str]:

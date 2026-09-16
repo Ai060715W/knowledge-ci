@@ -86,9 +86,13 @@ webhook:
   bind_port: 8090
   events:
     push: [analyze, freshness, discover]
-    mr: [analyze, freshness, discover]
+    mr: [analyze, freshness, discover, comment]
   repos: {{}}
   auto_patch: false
+  # MR comments are written locally by default. Set false to publish through
+  # `gh pr comment` when GITHUB_TOKEN is available.
+  comment_dry_run: true
+  preview_base_url: "http://localhost:8080/"
 """
 
 EMPTY_REGISTRY = {

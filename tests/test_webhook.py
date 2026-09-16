@@ -1,12 +1,14 @@
 import hashlib
 import hmac
 import json
+import subprocess
 import tempfile
 import threading
 import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from unittest import mock
 
 from src.webhook.server import (
     EventParseError,
@@ -17,11 +19,24 @@ from src.webhook.server import (
     parse_platform_event,
     verify_github_signature,
 )
+from src.webhook.pipeline import build_mr_comment, run_event_actions
 
 
 def signed_headers(secret: str, raw_body: bytes) -> dict[str, str]:
     digest = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
     return {"X-Hub-Signature-256": f"sha256={digest}", "Content-Type": "application/json"}
+
+
+def init_git_repo(root: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=root, check=True)
+
+
+def commit_all(root: Path, message: str) -> str:
+    subprocess.run(["git", "add", "."], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", message], cwd=root, check=True)
+    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
 
 
 class SignatureTest(unittest.TestCase):
@@ -215,6 +230,121 @@ class WebhookServerTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=5)
+
+
+class WebhookPipelineTest(unittest.TestCase):
+    def test_build_mr_comment_includes_impact_freshness_and_patch_preview(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            patches = root / "patches"
+            patches.mkdir()
+            patch = {
+                "patch_id": "kp_1",
+                "unit_id": "payment_retry",
+                "delta_ops": [{"insert": "new"}],
+            }
+            (patches / "patch_kp_1.json").write_text(json.dumps(patch), encoding="utf-8")
+            body = build_mr_comment(
+                {"kind": "mr", "number": 7, "title": "change retry", "head_sha": "abc1234"},
+                {"patches_path": patches},
+                {
+                    "impact_report": {
+                        "changed_files": [
+                            {
+                                "path": "src/payment/retry.py",
+                                "unit_id": "payment_retry",
+                                "summary": {"functions": ["retry_payment"], "classes": [], "constants": []},
+                            }
+                        ]
+                    },
+                    "freshness_report": {
+                        "summary": {"needs_llm": 1, "total": 1},
+                        "units": [
+                            {
+                                "unit_id": "payment_retry",
+                                "verdict": "partial_update",
+                                "basis": "llm",
+                                "layers": [{"layer": "time"}, {"layer": "ast"}],
+                                "actions": ["patch_written: patch_kp_1.json"],
+                            }
+                        ],
+                    },
+                },
+            )
+
+        self.assertIn("Knowledge CI MR Summary", body)
+        self.assertIn("payment_retry", body)
+        self.assertIn("retry_payment", body)
+        self.assertIn("partial_update", body)
+        self.assertIn("http://localhost:8080/?delta=", body)
+
+    def test_mr_comment_action_writes_local_markdown(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            init_git_repo(root)
+            (root / "mod.py").write_text("MAX = 5\n", encoding="utf-8")
+            first = commit_all(root, "initial")
+            knowledge_dir = root / ".knowledge-ci"
+            data_dir = knowledge_dir / "data"
+            reports = data_dir / "reports"
+            patches = data_dir / "patches"
+            reports.mkdir(parents=True)
+            patches.mkdir()
+            registry = data_dir / "registry.json"
+            registry.write_text(
+                json.dumps(
+                    {
+                        "version": 2,
+                        "last_updated": "",
+                        "units": [
+                            {
+                                "id": "u1",
+                                "title": "Unit",
+                                "status": "active",
+                                "version": 1,
+                                "scope": {"files": ["mod.py"], "symbols": []},
+                                "knowledge_delta": {"ops": [{"insert": "MAX is 5"}]},
+                                "last_verified": None,
+                                "code_hash": first[:8],
+                                "evidence": [],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = knowledge_dir / "config.yaml"
+            config.write_text(
+                "\n".join(
+                    [
+                        'project_path: ".."',
+                        'registry_path: "data/registry.json"',
+                        'reports_path: "data/reports"',
+                        'patches_path: "data/patches"',
+                        "webhook:",
+                        "  events:",
+                        "    mr: [analyze, freshness, comment]",
+                        "  comment_dry_run: true",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (root / "mod.py").write_text("MAX = 3\n", encoding="utf-8")
+            head = commit_all(root, "change")
+
+            event = {"kind": "mr", "number": 7, "title": "change", "head_sha": head}
+            with mock.patch.dict("os.environ", {"OPENAI_API_KEY": ""}):
+                results = run_event_actions(event, {"config_path": str(config)})
+
+            comment_files = list(reports.glob("mr_comment_*.md"))
+            body = comment_files[0].read_text(encoding="utf-8")
+
+        self.assertEqual([item["name"] for item in results], ["analyze", "freshness", "comment"])
+        self.assertEqual(len(comment_files), 1)
+        self.assertIn("u1", body)
+        self.assertIn("needs_llm", body)
+        self.assertIn("Nothing was landed automatically", body)
 
 
 if __name__ == "__main__":
