@@ -302,6 +302,29 @@ kc webhook --config .knowledge-ci\config.yaml
 缺失输入（无 discovery 报告、无反馈记录、无已审核补丁）时对应指标为 `null` 并附说明，
 不编造数值。
 
+## 知识变更通知 / Knowledge-Change Notifications
+
+`kc notify` 扫描 `patches/` 与 registry 当前状态，按 owner 汇总待办到
+`data/reports/notify_<ts>.json`（只读本地文件，不调 LLM、不出网）：
+
+```powershell
+kc notify                      # 在项目目录运行（自动发现 config）
+kc notify --registry <path> --patches <dir> --out <dir>   # 显式路径，无需 config
+```
+
+- **口径 / buckets**：PENDING 补丁 → `pending_review`（待审核）；APPLIED 补丁 → `changed`
+  （已变更）；REJECTED 单独计数，绝不混入 `changed`；registry 中 `under_review` /
+  `outdated` 单元分别列入 `units_under_review` / `units_outdated` 待办清单。
+- **归属 / ownership**：补丁经 `unit_id` 在 registry 中解析 owner；unit 缺失或
+  `owner: null` 时归入 `(unassigned)`，条目保留 `unit_id` 便于排查。
+- **容错 / robustness**：损坏的补丁文件、缺 `unit_id`、未知 status 一律跳过并计入
+  `warnings`；patches 目录缺失产出空报告；registry 缺失则报错退出（配置错误）。
+- **每条带时间戳**：各桶按 `generated_at` 新→旧排序；v1 不做时间窗口过滤，
+  消费者可自行按时间戳过滤。
+- **webhook 留接口 / delivery extension**：报告的 `delivery.channels` 当前为
+  `["local_file"]`；纯数据函数 `build_notification_report()` 与落盘 IO 分离，
+  未来 webhook/IM 渠道直接复用该报告文档发送即可。
+
 ## A2A 多 Agent 流水线 / A2A Agent Pipeline
 
 `kc run` 一条命令跑通全链路（固定顺序、逐级 schema 校验、失败优雅降级、可 `--stop-after`）：

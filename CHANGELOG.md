@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added (Phase 2, Plan C: knowledge-change notifications)
+
+- `src/metrics/notify.py`: scans `patches/` (PENDING = awaiting review, APPLIED = landed changes, REJECTED counted separately and never mixed into "changed") plus the registry's current unit states, and builds a per-owner summary — each owner gets `pending_review` / `changed` / `rejected` patch buckets (newest first), a unit→status map, and explicit `units_under_review` / `units_outdated` to-do lists. Owners resolve through `patch.unit_id → registry`; unresolved units or `owner: null` fall into `(unassigned)` with the unit_id kept for triage. Corrupt patch files / patches without `unit_id` / unknown statuses are skipped into `warnings` instead of crashing; a missing patches directory yields an empty report; a missing registry raises a clear error.
+- Delivery stays local in v1 (`reports/notify_<ts>.json`) with the extension point documented in the report's `delivery` block: the pure-data `build_notification_report()` is separated from file IO so a future webhook/IM channel can reuse the same document.
+- `kc notify` (15th subcommand) + `scripts/notify.py` wrapper, with `--config/--registry/--patches/--out` overrides mirroring `kc metrics`; prints a per-run summary (owners / pending / changed / rejected / to-do units / warnings).
+- 11 new hermetic tests (grouping, unassigned fallback, newest-first ordering, malformed-patch warnings, empty inputs, missing-registry error, delivery block, file naming, CLI with config and with explicit paths, CLI error path) — 274 total, all passing.
+- Validated on `_validation/webhook_demo`: real `kc notify` run grouped `kp_100` (PENDING) and `kp_099` (APPLIED) under `payment-team` with commit/risk/version details, while three legacy patch files without `unit_id` degraded into warnings; the registry was not modified (read-only).
+
 ### Added (Phase 2, Plan B: MR bot — automatic MR/PR comments)
 
 - `src/webhook/pipeline.py`: new `comment` action for MR events (`mr` defaults to `[analyze, freshness, discover, comment]`). Prior action reports flow through a shared per-event context; the comment assembles an impacted knowledge-unit table (unit ↔ changed files ↔ changed symbols), per-unit freshness conclusions (verdict, basis, layers, actions), and a PENDING patch preview table (`none` when the run wrote no patches).
