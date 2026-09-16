@@ -23,6 +23,7 @@ from src.cli import (
     inject,
     metrics,
     migrate,
+    notify,
     run,
     webhook,
 )
@@ -42,6 +43,7 @@ COMMANDS: dict[str, Any] = {
     "migrate": migrate,
     "webhook": webhook,
     "metrics": metrics,
+    "notify": notify,
     "run": run,
 }
 

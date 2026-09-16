@@ -13,6 +13,7 @@ from src.cli import (
     inject,
     metrics,
     migrate,
+    notify,
     run,
     webhook,
 )
@@ -37,6 +38,7 @@ class KcCliTest(unittest.TestCase):
                 "migrate",
                 "webhook",
                 "metrics",
+                "notify",
                 "run",
             },
         )
