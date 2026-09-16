@@ -15,6 +15,11 @@ venv/
 docs/GAP_PLAN.md
 docs/IMPLEMENTATION_PLAN.md
 docs/PHASE2_PLAN.md
+docs/HANDOFF.md
+knowledge_ci_full(1).html
+
+# Local assistant workspace (never publish)
+.workbuddy/
 
 # Per-user Knowledge CI artifacts (keep these out of the template repo)
 data/patches/*.json
